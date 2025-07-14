@@ -1,0 +1,462 @@
+
+import type { IStorage } from '../storage';
+import type { Strategy, Signal, InsertSignal, MarketData } from '@shared/schema';
+
+/**
+ * Enhanced RevStrat Strategy Configuration
+ */
+export interface RevStratConfig {
+  maxHistoryLength: number;
+  riskRatio: number;
+  minBarRange: number;
+  minConfidence: number;
+  maxPositionSizePercent: number;
+  volatilityThreshold: number;
+  trendAnalysisPeriod: number;
+}
+
+export const revStratConfig: RevStratConfig = {
+  maxHistoryLength: 100,
+  riskRatio: 2.0,
+  minBarRange: 0.01,
+  minConfidence: 55,
+  maxPositionSizePercent: 0.025, // 2.5% max position size
+  volatilityThreshold: 0.3,
+  trendAnalysisPeriod: 10
+};
+
+/**
+ * Enhanced Candle Structure for RevStrat Analysis
+ */
+export interface Candle {
+  timestamp: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume?: number;
+  range: number;
+}
+
+export interface RevStratSignal {
+  symbol: string;
+  type: 'CALL' | 'PUT';
+  stratPattern: string;
+  entry: number;
+  stop: number;
+  target: number;
+  riskReward: number;
+  confidence: number;
+  timestamp: number;
+  bars: [Candle, Candle, Candle];
+}
+
+/**
+ * RevStrat Strategy Implementation
+ * Focuses on reversal patterns using enhanced Strat bar analysis
+ */
+export class RevStratStrategy {
+  protected storage: IStorage;
+  private config: RevStratConfig;
+  private history: Record<string, Candle[]> = {};
+  private accountSize: number = 50000; // Mock account size
+
+  constructor(storage: IStorage) {
+    this.storage = storage;
+    this.config = revStratConfig;
+  }
+
+  /**
+   * Generate RevStrat signals using reversal pattern recognition
+   */
+  async generateSignal(strategy: Strategy): Promise<Signal | null> {
+    try {
+      // Get market data for analysis
+      const symbol = this.selectSymbol();
+      const marketData = await this.getMarketData(symbol);
+      
+      if (!marketData) {
+        console.log(`No market data available for ${symbol}`);
+        return null;
+      }
+
+      // Generate candle history from current market data
+      const candleHistory = this.generateCandleHistory(marketData);
+      
+      if (candleHistory.length < 10) {
+        console.log('Insufficient candle history for RevStrat analysis');
+        return null;
+      }
+
+      // Store history for pattern analysis
+      this.history[symbol] = candleHistory;
+
+      // Analyze for RevStrat patterns
+      console.log(`🔍 RevStrat analyzing ${symbol} with ${candleHistory.length} candles...`);
+      const revStratSignal = this.analyzeRevStrat(candleHistory);
+      
+      if (!revStratSignal) {
+        console.log(`❌ RevStrat: No patterns detected for ${symbol}`);
+        return null;
+      }
+
+      console.log(`🎯 RevStrat pattern detected: ${revStratSignal.stratPattern} for ${symbol} (${revStratSignal.confidence}%)`);
+
+      // Additional validation
+      if (revStratSignal.confidence < this.config.minConfidence) {
+        console.log(`🔄 RevStrat signal filtered due to low confidence: ${revStratSignal.confidence}% < ${this.config.minConfidence}%`);
+        return null;
+      }
+
+      console.log(`✅ RevStrat signal passed confidence check: ${revStratSignal.confidence}% >= ${this.config.minConfidence}%`);
+
+      const signal: InsertSignal = {
+        strategyId: strategy.id,
+        symbol: revStratSignal.symbol,
+        direction: revStratSignal.type,
+        confidence: revStratSignal.confidence,
+        currentPrice: marketData.price,
+        entryRange: { min: revStratSignal.entry, max: revStratSignal.entry },
+        targetPrice: revStratSignal.target,
+        stopLoss: revStratSignal.stop,
+        positionSize: this.calculatePositionSize(marketData.price, revStratSignal.entry, revStratSignal.stop),
+        riskReward: revStratSignal.riskReward,
+        pattern: revStratSignal.stratPattern,
+        reasoning: this.generateReasoning(revStratSignal),
+        confluence: this.generateConfluence(candleHistory, revStratSignal),
+        marketContext: this.generateMarketContext(marketData),
+        expectedHold: this.getExpectedHoldTime(),
+        optimalEntry: this.getOptimalEntryWindow(),
+        optionsData: this.generateOptionsData(marketData.price, revStratSignal.type),
+        status: 'active'
+      };
+
+      return await this.storage.createSignal(signal);
+    } catch (error) {
+      console.error('Error generating RevStrat signal:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Enhanced candle validation and processing
+   */
+  private validateCandle(raw: any): Candle | null {
+    try {
+      const candle: Candle = {
+        timestamp: Date.now(),
+        open: parseFloat(raw.open),
+        high: parseFloat(raw.high),
+        low: parseFloat(raw.low),
+        close: parseFloat(raw.close),
+        volume: raw.volume ? parseFloat(raw.volume) : undefined,
+        range: 0
+      };
+
+      // Validate OHLC logic
+      if (candle.high < Math.max(candle.open, candle.close) ||
+          candle.low > Math.min(candle.open, candle.close) ||
+          candle.high <= candle.low) {
+        return null;
+      }
+
+      candle.range = candle.high - candle.low;
+      
+      // Filter out low-range bars (noise)
+      if (candle.range < this.config.minBarRange) {
+        return null;
+      }
+
+      return candle;
+    } catch (error) {
+      console.error('Error validating candle:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Improved Strat type detection with edge case handling
+   */
+  private getStratType(prev: Candle, curr: Candle): '1' | '2U' | '2D' | '3' | null {
+    try {
+      // Handle exact equality cases
+      const highComp = curr.high === prev.high ? 0 : (curr.high > prev.high ? 1 : -1);
+      const lowComp = curr.low === prev.low ? 0 : (curr.low > prev.low ? 1 : -1);
+
+      if (highComp === -1 && lowComp === 1) return '1';  // Inside bar
+      if (highComp === 1 && lowComp >= 0) return '2U';   // Up bar
+      if (lowComp === -1 && highComp <= 0) return '2D';  // Down bar
+      if (highComp === 1 && lowComp === -1) return '3';  // Outside bar
+
+      return null;
+    } catch (error) {
+      console.error('Error in getStratType:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Enhanced RevStrat detection with confidence scoring
+   */
+  protected analyzeRevStrat(bars: Candle[]): RevStratSignal | null {
+    if (bars.length < 3) return null;
+
+    const [bar1, bar2, bar3] = bars.slice(-3);
+    const prevType = this.getStratType(bar1, bar2);
+    const currType = this.getStratType(bar2, bar3);
+
+    if (!prevType || !currType) return null;
+
+    let signal: Partial<RevStratSignal> = {
+      timestamp: Date.now(),
+      bars: [bar1, bar2, bar3]
+    };
+
+    // RevStrat pattern detection
+    if (prevType === '2D' && currType === '2U') {
+      const range = bar3.high - bar3.low;
+      signal = {
+        ...signal,
+        type: 'CALL',
+        stratPattern: '2D->2U RevStrat',
+        entry: bar3.high,
+        stop: bar3.low,
+        target: bar3.high + (range * this.config.riskRatio),
+        riskReward: this.config.riskRatio
+      };
+    } else if (prevType === '2U' && currType === '2D') {
+      const range = bar3.high - bar3.low;
+      signal = {
+        ...signal,
+        type: 'PUT',
+        stratPattern: '2U->2D RevStrat',
+        entry: bar3.low,
+        stop: bar3.high,
+        target: bar3.low - (range * this.config.riskRatio),
+        riskReward: this.config.riskRatio
+      };
+    } else if (prevType === '1' && currType === '2U') {
+      // Inside bar followed by up bar - bullish breakout
+      const range = bar3.high - bar3.low;
+      signal = {
+        ...signal,
+        type: 'CALL',
+        stratPattern: '1->2U Breakout',
+        entry: bar3.high,
+        stop: bar2.low,
+        target: bar3.high + (range * this.config.riskRatio),
+        riskReward: this.config.riskRatio
+      };
+    } else if (prevType === '1' && currType === '2D') {
+      // Inside bar followed by down bar - bearish breakdown
+      const range = bar3.high - bar3.low;
+      signal = {
+        ...signal,
+        type: 'PUT',
+        stratPattern: '1->2D Breakdown',
+        entry: bar3.low,
+        stop: bar2.high,
+        target: bar3.low - (range * this.config.riskRatio),
+        riskReward: this.config.riskRatio
+      };
+    } else {
+      return null;
+    }
+
+    // Calculate confidence score
+    signal.confidence = this.calculateConfidence(bars);
+
+    return signal as RevStratSignal;
+  }
+
+  /**
+   * Confidence scoring system
+   */
+  private calculateConfidence(bars: Candle[]): number {
+    let score = 50; // Base confidence
+
+    const [bar1, bar2, bar3] = bars.slice(-3);
+    
+    // Volume confirmation (if available)
+    if (bar3.volume && bar2.volume && bar3.volume > bar2.volume * 1.2) {
+      score += 15;
+    }
+
+    // Range analysis
+    const avgRange = bars.slice(-5).reduce((sum, bar) => sum + bar.range, 0) / 5;
+    if (bar3.range > avgRange * 1.1) {
+      score += 10;
+    }
+
+    // Pattern strength
+    const bar2Range = bar2.range;
+    const bar3Range = bar3.range;
+    if (bar3Range > bar2Range * 1.2) {
+      score += 10;
+    }
+
+    // Trend context
+    const trend = this.analyzeTrend(bars.slice(-this.config.trendAnalysisPeriod));
+    if (trend === 'strong') score += 15;
+    else if (trend === 'weak') score -= 10;
+
+    // Close position analysis
+    const closePosition = this.analyzeClosePosition(bar3);
+    score += closePosition;
+
+    // Multiple timeframe confluence (simulated)
+    if (Math.random() > 0.7) { // 30% chance of confluence
+      score += 8;
+    }
+
+    return Math.min(Math.max(score, 0), 95);
+  }
+
+  /**
+   * Analyze close position within the bar
+   */
+  private analyzeClosePosition(bar: Candle): number {
+    const closePercent = (bar.close - bar.low) / (bar.high - bar.low);
+    
+    // Strong closes get bonus points
+    if (closePercent > 0.8 || closePercent < 0.2) {
+      return 8;
+    } else if (closePercent > 0.7 || closePercent < 0.3) {
+      return 4;
+    }
+    
+    return 0;
+  }
+
+  /**
+   * Trend analysis helper
+   */
+  private analyzeTrend(bars: Candle[]): 'strong' | 'weak' | 'sideways' {
+    if (bars.length < 5) return 'sideways';
+    
+    const closes = bars.map(b => b.close);
+    const first = closes[0];
+    const last = closes[closes.length - 1];
+    const change = Math.abs(last - first) / first;
+    
+    if (change > 0.02) return 'strong';
+    if (change < 0.005) return 'sideways';
+    return 'weak';
+  }
+
+  /**
+   * Generate mock candle history from current market data for analysis
+   */
+  protected generateCandleHistory(marketData: MarketData): Candle[] {
+    const candles: Candle[] = [];
+    const basePrice = marketData.price;
+    const volatility = 0.02; // 2% volatility
+    
+    for (let i = 0; i < 20; i++) {
+      const randomChange = (Math.random() - 0.5) * volatility * 2;
+      const open = i === 0 ? basePrice : candles[i - 1].close;
+      const close = open * (1 + randomChange);
+      const high = Math.max(open, close) * (1 + Math.random() * volatility * 0.5);
+      const low = Math.min(open, close) * (1 - Math.random() * volatility * 0.5);
+      const range = high - low;
+      
+      candles.push({
+        timestamp: Date.now() - (19 - i) * 4 * 60 * 60 * 1000, // 4-hour intervals
+        open,
+        high,
+        low,
+        close,
+        volume: Math.floor(Math.random() * 1000000) + 500000,
+        range
+      });
+    }
+    
+    return candles;
+  }
+
+  /**
+   * Utility methods
+   */
+  protected selectSymbol(): string {
+    const symbols = ['AAPL', 'SPY', 'TSLA', 'QQQ', 'NVDA', 'MSFT', 'META', 'GOOGL', 'AMZN'];
+    return symbols[Math.floor(Math.random() * symbols.length)];
+  }
+
+  protected async getMarketData(symbol: string): Promise<MarketData | null> {
+    const data = await this.storage.getLatestMarketData(symbol);
+    return data ? data : null;
+  }
+
+  protected calculatePositionSize(currentPrice: number, entry: number, stop: number): number {
+    const risk = Math.abs(entry - stop);
+    const accountRisk = this.accountSize * this.config.maxPositionSizePercent;
+    const sharesFromRisk = accountRisk / risk;
+    const sharesFromPrice = Math.floor((accountRisk * 0.5) / currentPrice);
+    
+    return Math.min(sharesFromRisk, sharesFromPrice);
+  }
+
+  protected generateReasoning(signal: RevStratSignal): string {
+    const patterns = {
+      '2D->2U RevStrat': 'RevStrat reversal pattern: Down bar followed by Up bar indicates momentum shift from bearish to bullish. Entry above high of reversal bar with stop below low.',
+      '2U->2D RevStrat': 'RevStrat reversal pattern: Up bar followed by Down bar indicates momentum shift from bullish to bearish. Entry below low of reversal bar with stop above high.',
+      '1->2U Breakout': 'Inside bar compression followed by bullish breakout. Volatility expansion expected after consolidation period.',
+      '1->2D Breakdown': 'Inside bar compression followed by bearish breakdown. Volatility expansion expected after consolidation period.'
+    };
+    
+    const baseReason = patterns[signal.stratPattern as keyof typeof patterns] || 'RevStrat pattern detected with favorable risk/reward setup';
+    
+    return `${baseReason} Confidence: ${signal.confidence}% based on range analysis, volume confirmation, and trend context. ${signal.riskReward}:1 risk/reward ratio with defined levels.`;
+  }
+
+  private generateConfluence(candles: Candle[], signal: RevStratSignal): string {
+    const recentVolume = candles.slice(-3).map(c => c.volume).filter(v => v !== undefined);
+    const avgVolume = recentVolume.length > 0 ? recentVolume.reduce((a, b) => a! + b!, 0)! / recentVolume.length : 'N/A';
+    const currentVolume = signal.bars[2].volume;
+    const volumeConfirm = currentVolume && avgVolume !== 'N/A' && currentVolume > avgVolume * 1.1;
+    
+    const trendContext = this.analyzeTrend(candles.slice(-10));
+    const rangeExpansion = signal.bars[2].range > signal.bars[1].range * 1.1;
+    
+    return `RevStrat confluence: ${signal.stratPattern}, ${volumeConfirm ? 'Volume expansion' : 'Normal volume'}, ${rangeExpansion ? 'Range expansion' : 'Normal range'}, ${trendContext} trend context`;
+  }
+
+  private generateMarketContext(marketData: MarketData): string {
+    const volatility = (Math.random() * 0.3 + 0.1).toFixed(2);
+    const trend = marketData.change > 0 ? 'bullish' : 'bearish';
+    
+    return `Market showing ${trend} bias with ${volatility}% volatility. RevStrat pattern emergence suggests potential reversal or continuation opportunity.`;
+  }
+
+  private getExpectedHoldTime(): string {
+    const holdTimes = ['4-8 hours', '8-12 hours', '12-24 hours', '1-2 days'];
+    return holdTimes[Math.floor(Math.random() * holdTimes.length)];
+  }
+
+  private getOptimalEntryWindow(): string {
+    return 'Next 2-4 hours during active market session';
+  }
+
+  protected generateOptionsData(currentPrice: number, direction: string): any {
+    const isCall = direction === 'CALL';
+    const strike = isCall ? 
+      Math.round(currentPrice * 1.015) : 
+      Math.round(currentPrice * 0.985);
+    
+    return {
+      strike,
+      expiration: this.getNextFridayExpiration(),
+      delta: isCall ? Math.random() * 0.35 + 0.35 : -(Math.random() * 0.35 + 0.35),
+      premium: currentPrice * (Math.random() * 0.04 + 0.02),
+      impliedVol: Math.random() * 0.2 + 0.2
+    };
+  }
+
+  private getNextFridayExpiration(): string {
+    const now = new Date();
+    const friday = new Date(now);
+    const daysToFriday = (5 - now.getDay() + 7) % 7 || 7;
+    friday.setDate(now.getDate() + daysToFriday);
+    return friday.toISOString().split('T')[0];
+  }
+}

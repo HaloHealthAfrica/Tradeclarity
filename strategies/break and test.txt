@@ -1,0 +1,1010 @@
+import { EventEmitter } from 'events';
+import axios from 'axios';
+import moment from 'moment-timezone';
+
+interface BreakoutSignal {
+    symbol: string;
+    action: 'BUY' | 'SELL';
+    quantity: number;
+    entryPrice: number;
+    stopLoss: number;
+    takeProfit: number;
+    score: number;
+    conditions: string[];
+    timestamp: number;
+    candle: any;
+    breakoutType: 'break_and_hold' | 'volume_breakout' | 'price_breakout';
+    confirmationLevel: number;
+}
+
+interface MarketData {
+    symbol: string;
+    prevDayHigh: number;
+    prevDayLow: number;
+    avgVolume: number;
+    lastUpdate: number;
+    currentPrice: number;
+    currentVolume: number;
+    supportLevels?: number[];
+    resistanceLevels?: number[];
+    // Enhanced with TwelveData indicators
+    vwap?: number;
+    volumeSMA?: number;
+    bollingerBands?: {
+        upper: number;
+        middle: number;
+        lower: number;
+    };
+}
+
+interface SignalState {
+    breakoutDetected: boolean;
+    confirmationCount: number;
+    lastSignalTime: number;
+    holdLevel: number;
+    volumeSpike: boolean;
+    priceMomentum: boolean;
+}
+
+interface TechnicalIndicators {
+    rsi: number;
+    macd: {
+        macd: number;
+        signal: number;
+        histogram: number;
+    };
+    ema8: number;
+    ema21: number;
+    ema50: number;
+    volume: number;
+    atr: number;
+    // Enhanced indicators
+    vwap: number;
+    volumeSMA: number;
+    bollingerBands: {
+        upper: number;
+        middle: number;
+        lower: number;
+    };
+}
+
+interface TwelveDataResponse {
+    meta: any;
+    values: any[];
+    status: string;
+}
+
+class BreakAndHoldStrategy extends EventEmitter {
+    private config: any;
+    private apiClient: any;
+    private riskManager: any;
+    private logger: any;
+    private marketData: Map<string, MarketData> = new Map();
+    private signalStates: Map<string, SignalState> = new Map();
+    private candlestickManager: any;
+    private technicalAnalysis: any;
+    private cache: Map<string, any> = new Map();
+    private twelveDataApiKey: string;
+
+    constructor(config: any, riskManager: any, apiClient: any, twelveDataApiKey: string) {
+        super();
+        this.config = config;
+        this.riskManager = riskManager;
+        this.apiClient = apiClient;
+        this.twelveDataApiKey = twelveDataApiKey;
+        this.logger = new Logger();
+        this.candlestickManager = new CandlestickManager();
+        this.technicalAnalysis = new EnhancedTechnicalAnalysis(apiClient, twelveDataApiKey);
+        
+        this.initializeConfig();
+    }
+
+    private initializeConfig(): void {
+        // Enhanced configuration for TwelveData integrations
+        this.config.BREAKOUT_SCORE_THRESHOLD = 5; // Increased due to more indicators
+        this.config.CONFIRMATION_CANDLES = 3;
+        this.config.MIN_VOLUME_MULTIPLIER = 2.0;
+        this.config.HOLD_CONFIRMATION_LEVELS = 3;
+        
+        // Enhanced breakout types with new indicators
+        this.config.BREAKOUT_TYPES = {
+            'break_and_hold': {
+                minScore: 5, // Increased threshold
+                volumeMultiplier: 2.0,
+                confirmationCandles: 3,
+                holdLevels: [1, 2, 3],
+                useVWAP: true,
+                useBollingerBands: true,
+                useVolumeSMA: true
+            },
+            'volume_breakout': {
+                minScore: 4,
+                volumeMultiplier: 1.8,
+                confirmationCandles: 2,
+                holdLevels: [1, 2],
+                useVWAP: true,
+                useBollingerBands: false,
+                useVolumeSMA: true
+            },
+            'price_breakout': {
+                minScore: 3,
+                volumeMultiplier: 1.5,
+                confirmationCandles: 1,
+                holdLevels: [1],
+                useVWAP: false,
+                useBollingerBands: true,
+                useVolumeSMA: false
+            }
+        };
+
+        // Cache settings for TwelveData API calls
+        this.config.CACHE_DURATION = {
+            VWAP: 60000, // 1 minute
+            VOLUME_SMA: 300000, // 5 minutes
+            BOLLINGER_BANDS: 300000 // 5 minutes
+        };
+    }
+
+    /**
+     * Enhanced symbol initialization with TwelveData indicators
+     */
+    async initializeSymbol(symbol: string): Promise<void> {
+        try {
+            this.logger.info('Initializing Enhanced Break and Hold strategy for symbol', { symbol });
+
+            // Get basic market data
+            const dailyData = await this.apiClient.makeCall('/time_series', {
+                symbol,
+                interval: '1day',
+                outputsize: 5
+            });
+
+            if (!dailyData.values || dailyData.values.length === 0) {
+                throw new Error(`No daily data for ${symbol}`);
+            }
+
+            const prevDay = dailyData.values[1] || dailyData.values[0];
+
+            // Initialize TwelveData indicators
+            const [vwapData, volumeSMAData, bollingerData] = await Promise.all([
+                this.getTwelveDataVWAP(symbol),
+                this.getTwelveDataVolumeSMA(symbol),
+                this.getTwelveDataBollingerBands(symbol)
+            ]);
+
+            // Calculate basic volume average as fallback
+            const volumeData = await this.apiClient.makeCall('/time_series', {
+                symbol,
+                interval: '5min',
+                outputsize: 50
+            });
+
+            const fallbackAvgVolume = volumeData.values
+                ? volumeData.values
+                    .map((v: any) => parseFloat(v.volume))
+                    .reduce((sum: number, vol: number) => sum + vol, 0) / volumeData.values.length
+                : 1000000;
+
+            // Enhanced market data with TwelveData indicators
+            this.marketData.set(symbol, {
+                symbol,
+                prevDayHigh: parseFloat(prevDay.high),
+                prevDayLow: parseFloat(prevDay.low),
+                avgVolume: volumeSMAData ? volumeSMAData.volumeSMA : fallbackAvgVolume,
+                lastUpdate: Date.now(),
+                currentPrice: parseFloat(prevDay.close),
+                currentVolume: parseFloat(prevDay.volume),
+                vwap: vwapData ? vwapData.vwap : parseFloat(prevDay.close),
+                volumeSMA: volumeSMAData ? volumeSMAData.volumeSMA : fallbackAvgVolume,
+                bollingerBands: bollingerData ? bollingerData : {
+                    upper: parseFloat(prevDay.close) * 1.02,
+                    middle: parseFloat(prevDay.close),
+                    lower: parseFloat(prevDay.close) * 0.98
+                }
+            });
+
+            this.signalStates.set(symbol, {
+                breakoutDetected: false,
+                confirmationCount: 0,
+                lastSignalTime: 0,
+                holdLevel: 0,
+                volumeSpike: false,
+                priceMomentum: false
+            });
+
+            this.logger.info('Enhanced Break and Hold strategy initialized', {
+                symbol,
+                prevDayHigh: this.marketData.get(symbol)?.prevDayHigh,
+                prevDayLow: this.marketData.get(symbol)?.prevDayLow,
+                vwap: this.marketData.get(symbol)?.vwap,
+                volumeSMA: this.marketData.get(symbol)?.volumeSMA,
+                bollingerUpper: this.marketData.get(symbol)?.bollingerBands?.upper
+            });
+
+        } catch (error) {
+            this.logger.error('Failed to initialize Enhanced Break and Hold strategy', { 
+                symbol, 
+                error: error instanceof Error ? error.message : String(error)
+            });
+        }
+    }
+
+    /**
+     * Get VWAP from TwelveData with caching
+     */
+    private async getTwelveDataVWAP(symbol: string): Promise<{ vwap: number } | null> {
+        const cacheKey = `vwap_${symbol}`;
+        const cached = this.cache.get(cacheKey);
+
+        if (cached && Date.now() - cached.timestamp < this.config.CACHE_DURATION.VWAP) {
+            return cached.data;
+        }
+
+        try {
+            const response = await axios.get('https://api.twelvedata.com/vwap', {
+                params: {
+                    symbol,
+                    interval: '1min',
+                    outputsize: 1,
+                    apikey: this.twelveDataApiKey
+                }
+            });
+
+            if (response.data.status === 'ok' && response.data.values && response.data.values.length > 0) {
+                const vwapData = {
+                    vwap: parseFloat(response.data.values[0].vwap)
+                };
+
+                this.cache.set(cacheKey, {
+                    data: vwapData,
+                    timestamp: Date.now()
+                });
+
+                return vwapData;
+            }
+
+            return null;
+        } catch (error) {
+            this.logger.error('Failed to get VWAP from TwelveData', { symbol, error });
+            return null;
+        }
+    }
+
+    /**
+     * Get Volume SMA from TwelveData with caching
+     */
+    private async getTwelveDataVolumeSMA(symbol: string): Promise<{ volumeSMA: number } | null> {
+        const cacheKey = `volume_sma_${symbol}`;
+        const cached = this.cache.get(cacheKey);
+
+        if (cached && Date.now() - cached.timestamp < this.config.CACHE_DURATION.VOLUME_SMA) {
+            return cached.data;
+        }
+
+        try {
+            const response = await axios.get('https://api.twelvedata.com/sma', {
+                params: {
+                    symbol,
+                    interval: '5min',
+                    time_period: 20,
+                    series_type: 'volume',
+                    outputsize: 1,
+                    apikey: this.twelveDataApiKey
+                }
+            });
+
+            if (response.data.status === 'ok' && response.data.values && response.data.values.length > 0) {
+                const volumeSMAData = {
+                    volumeSMA: parseFloat(response.data.values[0].sma)
+                };
+
+                this.cache.set(cacheKey, {
+                    data: volumeSMAData,
+                    timestamp: Date.now()
+                });
+
+                return volumeSMAData;
+            }
+
+            return null;
+        } catch (error) {
+            this.logger.error('Failed to get Volume SMA from TwelveData', { symbol, error });
+            return null;
+        }
+    }
+
+    /**
+     * Get Bollinger Bands from TwelveData with caching
+     */
+    private async getTwelveDataBollingerBands(symbol: string): Promise<{ upper: number; middle: number; lower: number } | null> {
+        const cacheKey = `bollinger_${symbol}`;
+        const cached = this.cache.get(cacheKey);
+
+        if (cached && Date.now() - cached.timestamp < this.config.CACHE_DURATION.BOLLINGER_BANDS) {
+            return cached.data;
+        }
+
+        try {
+            const response = await axios.get('https://api.twelvedata.com/bbands', {
+                params: {
+                    symbol,
+                    interval: '5min',
+                    time_period: 20,
+                    sd: 2,
+                    outputsize: 1,
+                    apikey: this.twelveDataApiKey
+                }
+            });
+
+            if (response.data.status === 'ok' && response.data.values && response.data.values.length > 0) {
+                const bollingerData = {
+                    upper: parseFloat(response.data.values[0].upper_band),
+                    middle: parseFloat(response.data.values[0].middle_band),
+                    lower: parseFloat(response.data.values[0].lower_band)
+                };
+
+                this.cache.set(cacheKey, {
+                    data: bollingerData,
+                    timestamp: Date.now()
+                });
+
+                return bollingerData;
+            }
+
+            return null;
+        } catch (error) {
+            this.logger.error('Failed to get Bollinger Bands from TwelveData', { symbol, error });
+            return null;
+        }
+    }
+
+    /**
+     * Enhanced candle analysis with TwelveData indicators
+     */
+    async analyzeCandle(symbol: string, candle: any): Promise<BreakoutSignal | null> {
+        const marketData = this.marketData.get(symbol);
+        const signalState = this.signalStates.get(symbol);
+
+        if (!marketData || !signalState || !candle) return null;
+
+        // Check if we're in a trading window
+        if (!this.isInTradingWindow()) return null;
+
+        // Update real-time indicators
+        await this.updateRealTimeIndicators(symbol, candle);
+
+        const signal = await this.evaluateEnhancedBreakAndHold(symbol, candle, marketData, signalState);
+
+        if (signal) {
+            this.logger.info('Enhanced Break and Hold signal generated', { symbol, signal });
+            return signal;
+        }
+
+        return null;
+    }
+
+    /**
+     * Update real-time indicators
+     */
+    private async updateRealTimeIndicators(symbol: string, candle: any): Promise<void> {
+        const marketData = this.marketData.get(symbol);
+        if (!marketData) return;
+
+        // Update current price and volume
+        marketData.currentPrice = candle.close;
+        marketData.currentVolume = candle.volume;
+
+        // Update VWAP (every minute)
+        const vwapData = await this.getTwelveDataVWAP(symbol);
+        if (vwapData) {
+            marketData.vwap = vwapData.vwap;
+        }
+
+        // Update Volume SMA (every 5 minutes)
+        const volumeSMAData = await this.getTwelveDataVolumeSMA(symbol);
+        if (volumeSMAData) {
+            marketData.volumeSMA = volumeSMAData.volumeSMA;
+        }
+
+        // Update Bollinger Bands (every 5 minutes)
+        const bollingerData = await this.getTwelveDataBollingerBands(symbol);
+        if (bollingerData) {
+            marketData.bollingerBands = bollingerData;
+        }
+
+        marketData.lastUpdate = Date.now();
+    }
+
+    /**
+     * Enhanced Break and Hold evaluation with TwelveData indicators
+     */
+    private async evaluateEnhancedBreakAndHold(
+        symbol: string, 
+        candle: any, 
+        marketData: MarketData, 
+        signalState: SignalState
+    ): Promise<BreakoutSignal | null> {
+        
+        // Check for different types of breakouts with enhanced indicators
+        const breakoutTypes = await this.checkEnhancedBreakoutTypes(symbol, candle, marketData);
+
+        for (const [breakoutType, conditions] of Object.entries(breakoutTypes)) {
+            if ((conditions as any).met) {
+                const signal = await this.processBreakoutType(
+                    symbol, 
+                    candle, 
+                    marketData, 
+                    signalState, 
+                    breakoutType as any, 
+                    conditions
+                );
+                
+                if (signal) return signal;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Enhanced breakout type checking with TwelveData indicators
+     */
+    private async checkEnhancedBreakoutTypes(symbol: string, candle: any, marketData: MarketData): Promise<any> {
+        const indicators = await this.technicalAnalysis.getIndicators(symbol);
+        if (!indicators) return {};
+
+        const results = {
+            break_and_hold: { met: false, score: 0, conditions: [] },
+            volume_breakout: { met: false, score: 0, conditions: [] },
+            price_breakout: { met: false, score: 0, conditions: [] }
+        };
+
+        // Enhanced Break and Hold - with VWAP, Volume SMA, and Bollinger Bands
+        const breakAndHoldScore = this.scoreEnhancedBreakAndHold(candle, marketData, indicators);
+        results.break_and_hold.score = breakAndHoldScore.total;
+        results.break_and_hold.conditions = breakAndHoldScore.conditions;
+        results.break_and_hold.met = breakAndHoldScore.total >= this.config.BREAKOUT_TYPES.break_and_hold.minScore;
+
+        // Enhanced Volume Breakout - with VWAP and Volume SMA
+        const volumeBreakoutScore = this.scoreEnhancedVolumeBreakout(candle, marketData, indicators);
+        results.volume_breakout.score = volumeBreakoutScore.total;
+        results.volume_breakout.conditions = volumeBreakoutScore.conditions;
+        results.volume_breakout.met = volumeBreakoutScore.total >= this.config.BREAKOUT_TYPES.volume_breakout.minScore;
+
+        // Enhanced Price Breakout - with Bollinger Bands
+        const priceBreakoutScore = this.scoreEnhancedPriceBreakout(candle, marketData, indicators);
+        results.price_breakout.score = priceBreakoutScore.total;
+        results.price_breakout.conditions = priceBreakoutScore.conditions;
+        results.price_breakout.met = priceBreakoutScore.total >= this.config.BREAKOUT_TYPES.price_breakout.minScore;
+
+        return results;
+    }
+
+    /**
+     * Enhanced Break and Hold scoring with TwelveData indicators
+     */
+    private scoreEnhancedBreakAndHold(candle: any, marketData: MarketData, indicators: TechnicalIndicators): any {
+        const conditions = [];
+        let score = 0;
+
+        // 1. Price above VWAP (stronger signal than prev day high)
+        if (marketData.vwap && candle.close > marketData.vwap) {
+            score += 2;
+            conditions.push(`Price above VWAP (${candle.close.toFixed(2)} > ${marketData.vwap.toFixed(2)})`);
+        }
+
+        // 2. Bollinger Band breakout (dynamic resistance)
+        if (marketData.bollingerBands && candle.close > marketData.bollingerBands.upper) {
+            score += 2;
+            conditions.push(`Bollinger Band breakout (${candle.close.toFixed(2)} > ${marketData.bollingerBands.upper.toFixed(2)})`);
+        }
+
+        // 3. Enhanced volume confirmation with Volume SMA
+        const volumeMultiplier = marketData.volumeSMA ? 
+            candle.volume / marketData.volumeSMA : 
+            candle.volume / marketData.avgVolume;
+
+        if (volumeMultiplier > this.config.BREAKOUT_TYPES.break_and_hold.volumeMultiplier) {
+            score += 2;
+            conditions.push(`Strong volume vs SMA (${volumeMultiplier.toFixed(2)}x)`);
+        }
+
+        // 4. Traditional price above previous day high (confirmation)
+        if (candle.close > marketData.prevDayHigh) {
+            score += 1;
+            conditions.push('Price above previous day high');
+        }
+
+        // 5. EMA alignment (bullish trend)
+        if (indicators.ema8 > indicators.ema21 && indicators.ema21 > indicators.ema50) {
+            score += 1;
+            conditions.push('EMA alignment');
+        }
+
+        // 6. RSI momentum (not overbought)
+        if (indicators.rsi > 50 && indicators.rsi < 75) {
+            score += 1;
+            conditions.push(`RSI momentum (${indicators.rsi.toFixed(1)})`);
+        }
+
+        // 7. MACD confirmation
+        if (indicators.macd.macd > indicators.macd.signal && indicators.macd.histogram > 0) {
+            score += 1;
+            conditions.push('MACD bullish');
+        }
+
+        // 8. Price holding above Bollinger middle band
+        if (marketData.bollingerBands && candle.close > marketData.bollingerBands.middle) {
+            score += 1;
+            conditions.push('Price above Bollinger middle');
+        }
+
+        return { total: score, conditions };
+    }
+
+    /**
+     * Enhanced Volume Breakout scoring
+     */
+    private scoreEnhancedVolumeBreakout(candle: any, marketData: MarketData, indicators: TechnicalIndicators): any {
+        const conditions = [];
+        let score = 0;
+
+        // 1. Enhanced volume with Volume SMA
+        const volumeMultiplier = marketData.volumeSMA ? 
+            candle.volume / marketData.volumeSMA : 
+            candle.volume / marketData.avgVolume;
+
+        if (volumeMultiplier > this.config.BREAKOUT_TYPES.volume_breakout.volumeMultiplier) {
+            score += 2;
+            conditions.push(`High volume vs SMA (${volumeMultiplier.toFixed(2)}x)`);
+        }
+
+        // 2. Price above VWAP
+        if (marketData.vwap && candle.close > marketData.vwap) {
+            score += 2;
+            conditions.push('Price above VWAP');
+        }
+
+        // 3. Price momentum
+        if (candle.close > candle.open * 1.01) {
+            score += 1;
+            conditions.push('Price momentum');
+        }
+
+        // 4. RSI not overbought
+        if (indicators.rsi < 70) {
+            score += 1;
+            conditions.push('RSI not overbought');
+        }
+
+        return { total: score, conditions };
+    }
+
+    /**
+     * Enhanced Price Breakout scoring
+     */
+    private scoreEnhancedPriceBreakout(candle: any, marketData: MarketData, indicators: TechnicalIndicators): any {
+        const conditions = [];
+        let score = 0;
+
+        // 1. Bollinger Band upper breakout
+        if (marketData.bollingerBands && candle.close > marketData.bollingerBands.upper) {
+            score += 2;
+            conditions.push('Bollinger Band breakout');
+        }
+
+        // 2. Traditional resistance breakout
+        if (marketData.resistanceLevels && candle.close > marketData.resistanceLevels[0]) {
+            score += 1;
+            conditions.push('Price above resistance');
+        }
+
+        // 3. Volume confirmation
+        const volumeMultiplier = candle.volume / marketData.avgVolume;
+        if (volumeMultiplier > this.config.BREAKOUT_TYPES.price_breakout.volumeMultiplier) {
+            score += 1;
+            conditions.push('Volume confirmation');
+        }
+
+        // 4. Trend confirmation
+        if (indicators.ema8 > indicators.ema21) {
+            score += 1;
+            conditions.push('Trend confirmation');
+        }
+
+        return { total: score, conditions };
+    }
+
+    /**
+     * Generate enhanced Break and Hold signal with dynamic stop loss
+     */
+    private generateEnhancedBreakAndHoldSignal(
+        symbol: string,
+        candle: any,
+        marketData: MarketData,
+        breakoutType: string,
+        conditions: any
+    ): BreakoutSignal | null {
+        const entryPrice = candle.close;
+
+        // Dynamic stop loss using Bollinger Bands and VWAP
+        let stopLoss = marketData.prevDayHigh * 0.98; // Default
+
+        if (marketData.bollingerBands && marketData.vwap) {
+            // Use the higher of Bollinger middle band or VWAP for stop loss
+            const dynamicStop = Math.max(marketData.bollingerBands.middle, marketData.vwap);
+            stopLoss = Math.max(stopLoss, dynamicStop * 0.995); // 0.5% below dynamic level
+        }
+
+        // Dynamic take profit based on Bollinger Band width
+        let takeProfitMultiplier = 1.06; // Default 6%
+        
+        if (marketData.bollingerBands) {
+            const bbWidth = (marketData.bollingerBands.upper - marketData.bollingerBands.lower) / marketData.bollingerBands.middle;
+            // Wider bands = more volatile = higher target
+            takeProfitMultiplier = Math.min(1.10, 1.04 + (bbWidth * 2));
+        }
+
+        const takeProfit = entryPrice * takeProfitMultiplier;
+
+        const quantity = this.riskManager.calculatePositionSize(symbol, entryPrice, stopLoss);
+
+        if (quantity === 0) {
+            this.logger.warn('Position size calculated as zero', { symbol, entryPrice, stopLoss });
+            return null;
+        }
+
+        const signal: BreakoutSignal = {
+            symbol,
+            action: 'BUY',
+            quantity,
+            entryPrice,
+            stopLoss,
+            takeProfit,
+            score: conditions.score,
+            conditions: conditions.conditions,
+            timestamp: Date.now(),
+            candle: { ...candle },
+            breakoutType: breakoutType as any,
+            confirmationLevel: this.signalStates.get(symbol)?.confirmationCount || 1
+        };
+
+        // Reset signal state
+        const signalState = this.signalStates.get(symbol);
+        if (signalState) {
+            signalState.breakoutDetected = false;
+            signalState.confirmationCount = 0;
+            signalState.lastSignalTime = Date.now();
+        }
+
+        return signal;
+    }
+
+    /**
+     * Process specific breakout type (updated to use enhanced signal generation)
+     */
+    private async processBreakoutType(
+        symbol: string,
+        candle: any,
+        marketData: MarketData,
+        signalState: SignalState,
+        breakoutType: string,
+        conditions: any
+    ): Promise<BreakoutSignal | null> {
+        
+        const config = this.config.BREAKOUT_TYPES[breakoutType];
+        
+        if (!signalState.breakoutDetected) {
+            signalState.breakoutDetected = true;
+            signalState.confirmationCount = 1;
+            signalState.holdLevel = 1;
+            
+            this.logger.info('Enhanced Break and Hold detected', { 
+                symbol, 
+                breakoutType, 
+                score: conditions.score,
+                conditions: conditions.conditions
+            });
+            
+            return null; // Wait for confirmation
+        }
+
+        signalState.confirmationCount++;
+
+        // Check if we have enough confirmation
+        if (signalState.confirmationCount >= config.confirmationCandles) {
+            return this.generateEnhancedBreakAndHoldSignal(
+                symbol, 
+                candle, 
+                marketData, 
+                breakoutType, 
+                conditions
+            );
+        }
+
+        return null;
+    }
+
+    /**
+     * Check if we're in a trading window
+     */
+    private isInTradingWindow(): boolean {
+        const now = moment.tz('America/New_York');
+        const hour = now.hour();
+        const minute = now.minute();
+
+        const tradingWindows = [
+            { start: { hour: 9, minute: 30 }, end: { hour: 11, minute: 0 } }, // Morning breakout
+            { start: { hour: 14, minute: 30 }, end: { hour: 15, minute: 30 } }  // Power hour
+        ];
+
+        return tradingWindows.some(window => {
+            const startMinutes = window.start.hour * 60 + window.start.minute;
+            const endMinutes = window.end.hour * 60 + window.end.minute;
+            const nowMinutes = hour * 60 + minute;
+
+            return nowMinutes >= startMinutes && nowMinutes < endMinutes;
+        });
+    }
+
+    /**
+     * Get enhanced market data for symbol
+     */
+    getMarketData(symbol: string): MarketData | undefined {
+        return this.marketData.get(symbol);
+    }
+
+    /**
+     * Get signal state for symbol
+     */
+    getSignalState(symbol: string): SignalState | undefined {
+        return this.signalStates.get(symbol);
+    }
+
+    /**
+     * Get all active signals
+     */
+    getActiveSignals(): SignalState[] {
+        return Array.from(this.signalStates.values()).filter(state => state.breakoutDetected);
+    }
+
+    /**
+     * Clear cache for a symbol (useful for testing or manual refresh)
+     */
+    clearCache(symbol?: string): void {
+        if (symbol) {
+            const keysToDelete = Array.from(this.cache.keys()).filter(key => key.includes(symbol));
+            keysToDelete.forEach(key => this.cache.delete(key));
+        } else {
+            this.cache.clear();
+        }
+    }
+}
+
+// Enhanced Technical Analysis class
+class EnhancedTechnicalAnalysis {
+    private apiClient: any;
+    private twelveDataApiKey: string;
+
+    constructor(apiClient: any, twelveDataApiKey: string) {
+        this.apiClient = apiClient;
+        this.twelveDataApiKey = twelveDataApiKey;
+    }
+
+    async getIndicators(symbol: string): Promise<TechnicalIndicators | null> {
+        try {
+            // Get traditional indicators (from your existing API)
+            const basicIndicators = await this.getBasicIndicators(symbol);
+            
+            // Get TwelveData indicators
+            const [vwapData, volumeSMAData, bollingerData] = await Promise.all([
+                this.getVWAP(symbol),
+                this.getVolumeSMA(symbol),
+                this.getBollingerBands(symbol)
+            ]);
+
+            return {
+                ...basicIndicators,
+                vwap: vwapData || basicIndicators.ema21, // Fallback to EMA21
+                volumeSMA: volumeSMAData || 1000000, // Fallback volume
+                bollingerBands: bollingerData || {
+                    upper: basicIndicators.ema21 * 1.02,
+                    middle: basicIndicators.ema21,
+                    lower: basicIndicators.ema21 * 0.98
+                }
+            };
+        } catch (error) {
+            return null;
+        }
+    }
+
+    private async getBasicIndicators(symbol: string): Promise<any> {
+        // Simplified basic indicator calculation (replace with your actual implementation)
+        return {
+            rsi: 55,
+            macd: { macd: 0.1, signal: 0.05, histogram: 0.05 },
+            ema8: 100,
+            ema21: 98,
+            ema50: 95,
+            volume: 1000000,
+            atr: 2.5
+        };
+    }
+
+    private async getVWAP(symbol: string): Promise<number | null> {
+        try {
+            const response = await axios.get('https://api.twelvedata.com/vwap', {
+                params: {
+                    symbol,
+                    interval: '1min',
+                    outputsize: 1,
+                    apikey: this.twelveDataApiKey
+                }
+            });
+
+            if (response.data.status === 'ok' && response.data.values && response.data.values.length > 0) {
+                return parseFloat(response.data.values[0].vwap);
+            }
+            return null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    private async getVolumeSMA(symbol: string): Promise<number | null> {
+        try {
+            const response = await axios.get('https://api.twelvedata.com/sma', {
+                params: {
+                    symbol,
+                    interval: '5min',
+                    time_period: 20,
+                    series_type: 'volume',
+                    outputsize: 1,
+                    apikey: this.twelveDataApiKey
+                }
+            });
+
+            if (response.data.status === 'ok' && response.data.values && response.data.values.length > 0) {
+                return parseFloat(response.data.values[0].sma);
+            }
+            return null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    private async getBollingerBands(symbol: string): Promise<{ upper: number; middle: number; lower: number } | null> {
+        try {
+            const response = await axios.get('https://api.twelvedata.com/bbands', {
+                params: {
+                    symbol,
+                    interval: '5min',
+                    time_period: 20,
+                    sd: 2,
+                    outputsize: 1,
+                    apikey: this.twelveDataApiKey
+                }
+            });
+
+            if (response.data.status === 'ok' && response.data.values && response.data.values.length > 0) {
+                return {
+                    upper: parseFloat(response.data.values[0].upper_band),
+                    middle: parseFloat(response.data.values[0].middle_band),
+                    lower: parseFloat(response.data.values[0].lower_band)
+                };
+            }
+            return null;
+        } catch (error) {
+            return null;
+        }
+    }
+}
+
+// Helper classes (enhanced versions)
+class Logger {
+    log(level: string, message: string, data: any = {}) {
+        const timestamp = new Date().toISOString();
+        console.log(JSON.stringify({ timestamp, level, message, ...data }, null, 2));
+    }
+    
+    info(message: string, data: any = {}) { this.log('INFO', message, data); }
+    warn(message: string, data: any = {}) { this.log('WARN', message, data); }
+    error(message: string, data: any = {}) { this.log('ERROR', message, data); }
+}
+
+class CandlestickManager {
+    updatePrice(symbol: string, price: number, timestamp: number, volume: number): any {
+        // Simplified candlestick management
+        return {
+            start: timestamp,
+            open: price,
+            high: price,
+            low: price,
+            close: price,
+            volume: volume || 0
+        };
+    }
+}
+
+// Example usage and testing
+class ExampleUsage {
+    static async demonstrateEnhancedStrategy() {
+        // Initialize the enhanced strategy
+        const config = {
+            // Your existing config
+        };
+        
+        const riskManager = {
+            calculatePositionSize: (symbol: string, entryPrice: number, stopLoss: number) => {
+                // Simple position sizing - replace with your logic
+                const riskAmount = 1000; // $1000 risk per trade
+                const riskPerShare = entryPrice - stopLoss;
+                return Math.floor(riskAmount / riskPerShare);
+            }
+        };
+
+        const apiClient = {
+            makeCall: async (endpoint: string, params: any) => {
+                // Mock API client - replace with your implementation
+                return {
+                    values: [
+                        { high: 150, low: 145, close: 148, volume: 1000000 }
+                    ]
+                };
+            }
+        };
+
+        const twelveDataApiKey = 'your_twelvedata_api_key_here';
+
+        const strategy = new BreakAndHoldStrategy(config, riskManager, apiClient, twelveDataApiKey);
+
+        // Initialize a symbol
+        await strategy.initializeSymbol('AAPL');
+
+        // Simulate analyzing a candle
+        const mockCandle = {
+            open: 148,
+            high: 152,
+            low: 147,
+            close: 151,
+            volume: 2500000,
+            timestamp: Date.now()
+        };
+
+        const signal = await strategy.analyzeCandle('AAPL', mockCandle);
+
+        if (signal) {
+            console.log('Enhanced Break and Hold Signal Generated:', {
+                symbol: signal.symbol,
+                action: signal.action,
+                entryPrice: signal.entryPrice,
+                stopLoss: signal.stopLoss,
+                takeProfit: signal.takeProfit,
+                score: signal.score,
+                conditions: signal.conditions,
+                breakoutType: signal.breakoutType
+            });
+        } else {
+            console.log('No signal generated for current candle');
+        }
+
+        // Get current market data with enhanced indicators
+        const marketData = strategy.getMarketData('AAPL');
+        console.log('Enhanced Market Data:', {
+            currentPrice: marketData?.currentPrice,
+            vwap: marketData?.vwap,
+            volumeSMA: marketData?.volumeSMA,
+            bollingerBands: marketData?.bollingerBands
+        });
+    }
+}
+
+export { 
+    BreakAndHoldStrategy, 
+    EnhancedTechnicalAnalysis,
+    BreakoutSignal, 
+    MarketData, 
+    SignalState, 
+    TechnicalIndicators,
+    ExampleUsage 
+};

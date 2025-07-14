@@ -1,0 +1,320 @@
+# Fibonacci ABCD Trading Algorithm - Technical Specification
+
+## 1. Market Context Detection
+
+### Trend Classification
+```python
+def classify_trend(price_data, lookback_period=20):
+    """
+    Determine if market is in uptrend, downtrend, or sideways
+    Returns: 'uptrend', 'downtrend', 'sideways'
+    """
+    # Calculate moving averages or trend line slopes
+    # Return None if sideways (strategy not applicable)
+```
+
+### Prerequisites
+- Strategy only works in trending markets
+- Skip execution if market is sideways/ranging
+- Minimum data points required for pattern recognition
+
+## 2. Pattern Identification Algorithm
+
+### A. Point A Detection
+```python
+def find_point_a(price_data, trend_direction):
+    """
+    UPTREND: A = first low (or absolute lowest low)
+    DOWNTREND: A = first high (or absolute highest high)
+    """
+    if trend_direction == 'uptrend':
+        return find_first_significant_low(price_data)
+    elif trend_direction == 'downtrend':
+        return find_first_significant_high(price_data)
+```
+
+### B. Point B Detection
+```python
+def find_point_b(price_data, point_a, trend_direction):
+    """
+    UPTREND: B = first high as soon as possible after A
+    DOWNTREND: B = first low as soon as possible after A
+    """
+    start_index = point_a.index + 1
+    
+    if trend_direction == 'uptrend':
+        return find_first_significant_high(price_data[start_index:])
+    elif trend_direction == 'downtrend':
+        return find_first_significant_low(price_data[start_index:])
+```
+
+### C. Point C Detection (Most Complex)
+```python
+def find_point_c(price_data, point_a, point_b, trend_direction):
+    """
+    UPTREND: C = lowest point (not necessarily a low) inside A-B boundary
+             before market hits appropriate extension
+    DOWNTREND: C = highest point (not necessarily a high) inside A-B boundary
+               before market hits appropriate extension
+    """
+    # Define A-B boundary
+    boundary_start = min(point_a.index, point_b.index)
+    boundary_end = max(point_a.index, point_b.index)
+    
+    # Find retracement levels
+    retracement_levels = calculate_fibonacci_retracements(point_a, point_b)
+    
+    # Scan for appropriate C point
+    if trend_direction == 'uptrend':
+        return find_lowest_point_in_boundary(price_data, boundary_start, boundary_end, retracement_levels)
+    elif trend_direction == 'downtrend':
+        return find_highest_point_in_boundary(price_data, boundary_start, boundary_end, retracement_levels)
+```
+
+## 3. Fibonacci Level Calculations
+
+### Retracement Levels
+```python
+FIBONACCI_RETRACEMENTS = [0.0, 0.14, 0.214, 0.382, 0.5, 0.618, 1.0]
+
+def calculate_fibonacci_retracements(point_a, point_b):
+    """Calculate all Fibonacci retracement levels between A and B"""
+    price_diff = point_b.price - point_a.price
+    
+    levels = {}
+    for ratio in FIBONACCI_RETRACEMENTS:
+        levels[ratio] = point_b.price - (price_diff * ratio)
+    
+    return levels
+```
+
+### Extension Levels
+```python
+FIBONACCI_EXTENSIONS = [1.0, 1.18, 1.27, 1.618]
+
+def calculate_fibonacci_extensions(point_a, point_b, point_c):
+    """Calculate extension levels based on C retracement"""
+    retracement_depth = calculate_retracement_depth(point_a, point_b, point_c)
+    extension_target = determine_extension_target(retracement_depth)
+    
+    return extension_target
+```
+
+## 4. Retracement-to-Extension Mapping
+
+### Rule Engine
+```python
+def determine_extension_target(retracement_depth):
+    """
+    Map retracement depth to appropriate extension level
+    """
+    if retracement_depth <= 0.618:  # Includes 61.8%, 50%, 38.2%
+        return 1.618
+    elif retracement_depth <= 0.214:
+        return 1.27
+    elif retracement_depth <= 0.14:
+        return 1.18
+    elif retracement_depth <= 0.0:  # Touches point A
+        return 1.0
+    else:  # Breaks below point A
+        return None  # Pattern invalid
+```
+
+## 5. Point D Calculation and Validation
+
+### D Point Requirements
+```python
+def calculate_point_d(point_a, point_b, point_c, trend_direction):
+    """
+    Calculate target D point based on extension level
+    UPTREND: D must be a HIGH
+    DOWNTREND: D must be a LOW
+    """
+    extension_level = determine_extension_target(point_c.retracement_depth)
+    
+    if extension_level is None:
+        return None  # Invalid pattern
+    
+    # Calculate D price level
+    ab_range = point_b.price - point_a.price
+    bc_range = point_c.price - point_b.price
+    
+    d_price = point_c.price + (bc_range * extension_level)
+    
+    return {
+        'price': d_price,
+        'extension_level': extension_level,
+        'must_be_high': trend_direction == 'uptrend',
+        'must_be_low': trend_direction == 'downtrend'
+    }
+```
+
+## 6. Trade Entry Logic
+
+### Entry Conditions
+```python
+def check_entry_signal(current_price, point_a, point_b, point_c, trend_direction):
+    """
+    Entry: Counter-trend line break in retracement zone
+    """
+    # Verify we're in retracement zone (0-100%)
+    in_retracement_zone = is_in_retracement_zone(current_price, point_a, point_b)
+    
+    if not in_retracement_zone:
+        return False
+    
+    # Look for counter-trend line break
+    # Check for bullish engulfing, tweezer bottoms, etc.
+    entry_signal = detect_reversal_pattern(current_price, trend_direction)
+    
+    return entry_signal
+```
+
+### Position Sizing and Risk Management
+```python
+def calculate_position_size(account_balance, risk_per_trade, entry_price, stop_loss_price):
+    """
+    Calculate position size based on risk management rules
+    Max risk: 1% per trade for beginners
+    """
+    risk_amount = account_balance * risk_per_trade
+    price_difference = abs(entry_price - stop_loss_price)
+    
+    return risk_amount / price_difference
+```
+
+## 7. Exit Strategy
+
+### Stop Loss
+```python
+def set_stop_loss(point_a, trend_direction):
+    """
+    Stop loss: Below point A (uptrend) or Above point A (downtrend)
+    """
+    if trend_direction == 'uptrend':
+        return point_a.price - buffer  # Below A
+    elif trend_direction == 'downtrend':
+        return point_a.price + buffer  # Above A
+```
+
+### Take Profit
+```python
+def set_take_profit(point_d):
+    """
+    Take profit: At calculated D extension level
+    """
+    return point_d.price
+```
+
+## 8. Pattern Validation and Invalidation
+
+### Pattern Completion
+```python
+def check_pattern_completion(current_price, point_d, trend_direction):
+    """
+    Pattern complete when:
+    - Price reaches D extension level
+    - D point forms actual high/low as required
+    """
+    reached_target = abs(current_price - point_d.price) <= tolerance
+    
+    if reached_target:
+        # Validate D is actual high/low
+        if trend_direction == 'uptrend':
+            return is_actual_high(current_price)
+        elif trend_direction == 'downtrend':
+            return is_actual_low(current_price)
+```
+
+### Pattern Invalidation
+```python
+def check_pattern_invalidation(current_price, point_a, trend_direction):
+    """
+    Pattern invalid when:
+    - Price breaks below/above point A
+    - Need to reverse or redraw Fibonacci
+    """
+    if trend_direction == 'uptrend':
+        return current_price < point_a.price
+    elif trend_direction == 'downtrend':
+        return current_price > point_a.price
+```
+
+## 9. Pattern Reset Logic
+
+### New Pattern Detection
+```python
+def reset_and_find_new_pattern(price_data, completed_point_d):
+    """
+    When pattern completes at D:
+    1. Old A becomes new C
+    2. Old B becomes new D  
+    3. Find new A and B points
+    4. Draw new Fibonacci
+    """
+    new_fibonacci = {
+        'a': find_new_point_a(price_data, completed_point_d),
+        'b': find_new_point_b(price_data, completed_point_d),
+        'c': previous_point_a,  # Old A becomes new C
+        'd': previous_point_b   # Old B becomes new D
+    }
+    
+    return new_fibonacci
+```
+
+## 10. Main Algorithm Flow
+
+### Complete Trading Loop
+```python
+def fibonacci_abcd_trading_system(price_data):
+    """
+    Main trading algorithm execution
+    """
+    # 1. Classify market trend
+    trend = classify_trend(price_data)
+    if trend == 'sideways':
+        return None  # Skip sideways markets
+    
+    # 2. Find ABCD pattern
+    pattern = find_abcd_pattern(price_data, trend)
+    if pattern is None:
+        return None
+    
+    # 3. Calculate Fibonacci levels
+    fibonacci_levels = calculate_all_fibonacci_levels(pattern)
+    
+    # 4. Check for entry signal
+    entry_signal = check_entry_signal(price_data, pattern, trend)
+    
+    # 5. Execute trade if signal present
+    if entry_signal:
+        trade = execute_trade(pattern, fibonacci_levels, trend)
+        return trade
+    
+    # 6. Monitor existing positions
+    monitor_positions(fibonacci_levels, pattern)
+    
+    return None
+```
+
+## 11. Key Implementation Notes
+
+### Data Requirements
+- OHLC price data with sufficient history
+- Minimum lookback period for pattern recognition
+- Real-time data feed for live trading
+
+### Performance Considerations
+- Pattern recognition computationally intensive
+- Cache calculated Fibonacci levels
+- Implement efficient peak/trough detection algorithms
+
+### Risk Management Integration
+- Maximum 10% account drawdown limit
+- Position sizing based on volatility
+- Leverage recommendations: 1:10 for beginners
+
+### Statistical Validation
+- Backtest with claimed 80% success rate
+- Track win/loss ratios per market condition
+- Validate against different timeframes

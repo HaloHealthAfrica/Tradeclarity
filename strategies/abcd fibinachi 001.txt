@@ -1,0 +1,477 @@
+
+import type { IStorage } from '../storage';
+import type { Strategy, Signal, InsertSignal, MarketData } from '@shared/schema';
+
+/**
+ * ABCD Fibonacci Pattern Strategy
+ * Advanced harmonic pattern detection with Fibonacci confluence
+ */
+
+export interface ABCDPoint {
+  index: number;
+  price: number;
+  timestamp: Date;
+}
+
+export interface ABCDPattern {
+  A: ABCDPoint;
+  B: ABCDPoint;
+  C: ABCDPoint;
+  D: ABCDPoint;
+  abLength: number;
+  bcLength: number;
+  cdLength: number;
+  abRatio: number;
+  cdRatio: number;
+  fibonacciTargets: {
+    ext127: number;
+    ext161: number;
+    ext200: number;
+    ext261: number;
+  };
+  confluence: boolean;
+  strength: number;
+  direction: 'bullish' | 'bearish';
+}
+
+export interface FibonacciLevels {
+  retracement: {
+    r236: number;
+    r382: number;
+    r500: number;
+    r618: number;
+    r786: number;
+  };
+  extension: {
+    e127: number;
+    e161: number;
+    e200: number;
+    e261: number;
+    e314: number;
+  };
+}
+
+export interface EMAData {
+  ema20: number;
+  ema50: number;
+  ema100: number;
+  ema200: number;
+}
+
+export interface ABCDConfig {
+  minSwingSize: number;        // Minimum swing size in %
+  maxSwingLookback: number;    // Max bars to look back for swings
+  fibTolerance: number;        // Tolerance for Fibonacci levels
+  abcdRatioMin: number;        // Minimum AB/CD ratio
+  abcdRatioMax: number;        // Maximum AB/CD ratio
+  bcRetracementMin: number;    // Minimum BC retracement
+  bcRetracementMax: number;    // Maximum BC retracement
+  confluenceRequired: number;  // Required confluence factors
+  volumeConfirmation: boolean; // Require volume confirmation
+  trendAlignment: boolean;     // Require trend alignment
+}
+
+export const abcdConfig: ABCDConfig = {
+  minSwingSize: 0.5,          // 0.5% minimum swing
+  maxSwingLookback: 100,      // 100 bars lookback
+  fibTolerance: 0.02,         // 2% tolerance
+  abcdRatioMin: 0.618,        // 61.8% minimum
+  abcdRatioMax: 1.618,        // 161.8% maximum
+  bcRetracementMin: 0.382,    // 38.2% minimum retracement
+  bcRetracementMax: 0.886,    // 88.6% maximum retracement
+  confluenceRequired: 3,      // 3+ confluence factors
+  volumeConfirmation: true,
+  trendAlignment: true
+};
+
+export class ABCDFibonacciStrategy {
+  protected storage: IStorage;
+  protected priceHistory: MarketData[] = [];
+
+  constructor(storage: IStorage) {
+    this.storage = storage;
+  }
+
+  async generateSignal(strategy: Strategy): Promise<Signal | null> {
+    try {
+      // Get market data for major symbols
+      const symbols = ['SPY', 'QQQ', 'TSLA', 'AAPL', 'NVDA', 'MSFT', 'AMD', 'GOOGL'];
+      
+      for (const symbol of symbols) {
+        const marketData = await this.storage.getMarketDataHistory(symbol, 200);
+        if (marketData.length < 100) continue;
+
+        const pattern = this.detectABCDPattern(marketData);
+        if (pattern && pattern.confluence && pattern.strength >= 75) {
+          const signal = await this.createSignalFromPattern(strategy, symbol, pattern, marketData);
+          if (signal) {
+            await this.storage.createSignal(signal);
+            await this.storage.updateStrategyLastSignal(strategy.id);
+            return signal;
+          }
+        }
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Error generating ABCD Fibonacci signal:', error);
+      return null;
+    }
+  }
+
+  protected detectABCDPattern(marketData: MarketData[]): ABCDPattern | null {
+    if (marketData.length < 50) return null;
+
+    const swings = this.identifySwingPoints(marketData);
+    if (swings.length < 4) return null;
+
+    // Look for ABCD patterns in the last swing points
+    for (let i = swings.length - 4; i >= Math.max(0, swings.length - 20); i--) {
+      const A = swings[i];
+      const B = swings[i + 1];
+      const C = swings[i + 2];
+      const D = swings[i + 3];
+
+      const pattern = this.validateABCDPattern(A, B, C, D, marketData);
+      if (pattern) {
+        return pattern;
+      }
+    }
+
+    return null;
+  }
+
+  private identifySwingPoints(marketData: MarketData[]): ABCDPoint[] {
+    const swings: ABCDPoint[] = [];
+    const lookback = 5; // Bars on each side for swing confirmation
+
+    for (let i = lookback; i < marketData.length - lookback; i++) {
+      const current = marketData[i];
+      const isHigh = this.isSwingHigh(marketData, i, lookback);
+      const isLow = this.isSwingLow(marketData, i, lookback);
+
+      if (isHigh || isLow) {
+        const price = isHigh ? current.high : current.low;
+        if (price != null) {
+          swings.push({
+            index: i,
+            price,
+            timestamp: new Date(current.timestamp)
+          });
+        }
+      }
+    }
+
+    return swings;
+  }
+
+  private isSwingHigh(data: MarketData[], index: number, lookback: number): boolean {
+    if (!data[index] || data[index].high == null) return false;
+    const currentHigh = data[index].high!;
+    for (let i = index - lookback; i <= index + lookback; i++) {
+      if (i < 0 || i >= data.length) continue;
+      if (i !== index && data[i] && data[i].high != null && data[i].high >= currentHigh) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private isSwingLow(data: MarketData[], index: number, lookback: number): boolean {
+    if (!data[index] || data[index].low == null) return false;
+    const currentLow = data[index].low!;
+    for (let i = index - lookback; i <= index + lookback; i++) {
+      if (i < 0 || i >= data.length) continue;
+      if (i !== index && data[i] && data[i].low != null && data[i].low <= currentLow) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private validateABCDPattern(A: ABCDPoint, B: ABCDPoint, C: ABCDPoint, D: ABCDPoint, marketData: MarketData[]): ABCDPattern | null {
+    // Calculate pattern measurements
+    const abLength = Math.abs(B.price - A.price);
+    const bcLength = Math.abs(C.price - B.price);
+    const cdLength = Math.abs(D.price - C.price);
+
+    // Check minimum swing size
+    const minSwing = A.price * (abcdConfig.minSwingSize / 100);
+    if (abLength < minSwing || cdLength < minSwing) return null;
+
+    // Calculate ratios
+    const abRatio = abLength;
+    const cdRatio = cdLength;
+    const bcRetracementRatio = bcLength / abLength;
+
+    // Validate BC retracement
+    if (bcRetracementRatio < abcdConfig.bcRetracementMin || bcRetracementRatio > abcdConfig.bcRetracementMax) {
+      return null;
+    }
+
+    // Calculate AB/CD ratio
+    const abcdRatio = cdLength / abLength;
+    if (abcdRatio < abcdConfig.abcdRatioMin || abcdRatio > abcdConfig.abcdRatioMax) {
+      return null;
+    }
+
+    // Determine pattern direction
+    const direction: 'bullish' | 'bearish' = (A.price < B.price) ? 'bullish' : 'bearish';
+
+    // Calculate Fibonacci targets
+    const fibonacciTargets = this.calculateFibonacciTargets(A, B, C, D, direction);
+
+    // Check Fibonacci confluence
+    const fibonacciMatch = this.checkFibonacciConfluence(D.price, fibonacciTargets);
+
+    // Calculate EMAs for trend confirmation
+    const emaData = this.calculateEMAs(marketData, D.index);
+
+    // Calculate confluence and strength
+    const confluenceFactors = this.calculateConfluence(A, B, C, D, fibonacciTargets, emaData, marketData);
+    const confluence = confluenceFactors.count >= abcdConfig.confluenceRequired;
+    const strength = Math.min(95, confluenceFactors.score);
+
+    if (!confluence || strength < 70) return null;
+
+    return {
+      A, B, C, D,
+      abLength,
+      bcLength,
+      cdLength,
+      abRatio,
+      cdRatio,
+      fibonacciTargets,
+      confluence,
+      strength,
+      direction
+    };
+  }
+
+  private calculateFibonacciTargets(A: ABCDPoint, B: ABCDPoint, C: ABCDPoint, D: ABCDPoint, direction: 'bullish' | 'bearish') {
+    const ab = B.price - A.price;
+    const bc = C.price - B.price;
+
+    return {
+      ext127: C.price + (ab * 1.27),
+      ext161: C.price + (ab * 1.618),
+      ext200: C.price + (ab * 2.0),
+      ext261: C.price + (ab * 2.618)
+    };
+  }
+
+  private checkFibonacciConfluence(price: number, targets: any): boolean {
+    const tolerance = price * (abcdConfig.fibTolerance);
+    
+    return Object.values(targets).some(target => 
+      Math.abs(price - (target as number)) <= tolerance
+    );
+  }
+
+  private calculateEMAs(marketData: MarketData[], endIndex: number): EMAData {
+    const closes = marketData.slice(Math.max(0, endIndex - 200), endIndex + 1)
+      .map(d => d.close)
+      .filter((v): v is number => v !== null && v !== undefined);
+
+    return {
+      ema20: this.calculateEMA(closes, 20),
+      ema50: this.calculateEMA(closes, 50),
+      ema100: this.calculateEMA(closes, 100),
+      ema200: this.calculateEMA(closes, 200)
+    };
+  }
+
+  private calculateEMA(prices: number[], period: number): number {
+    if (prices.length < period) return prices.length > 0 ? prices[prices.length - 1] : 0;
+    
+    const k = 2 / (period + 1);
+    let ema = prices[0];
+    
+    for (let i = 1; i < prices.length; i++) {
+      ema = prices[i] * k + ema * (1 - k);
+    }
+    
+    return ema;
+  }
+
+  private calculateConfluence(A: ABCDPoint, B: ABCDPoint, C: ABCDPoint, D: ABCDPoint, 
+                            fibTargets: any, emaData: EMAData, marketData: MarketData[]) {
+    let score = 0;
+    let count = 0;
+    const factors: string[] = [];
+
+    // Fibonacci confluence
+    if (this.checkFibonacciConfluence(D.price, fibTargets)) {
+      score += 25;
+      count++;
+      factors.push('Fibonacci Extension Confluence');
+    }
+
+    // EMA trend alignment
+    const { ema20, ema50, ema100, ema200 } = emaData;
+    const bullishTrend = ema20 > ema50 && ema50 > ema100 && ema100 > ema200;
+    const bearishTrend = ema20 < ema50 && ema50 < ema100 && ema100 < ema200;
+    
+    if ((A.price < B.price && bullishTrend) || (A.price > B.price && bearishTrend)) {
+      score += 20;
+      count++;
+      factors.push('EMA Trend Alignment');
+    }
+
+    // Price action confirmation
+    if (D.price > ema20 && A.price < B.price) { // Bullish pattern above EMA20
+      score += 15;
+      count++;
+      factors.push('Price Above Key EMA');
+    } else if (D.price < ema20 && A.price > B.price) { // Bearish pattern below EMA20
+      score += 15;
+      count++;
+      factors.push('Price Below Key EMA');
+    }
+
+    // Pattern symmetry
+    const abLength = Math.abs(B.price - A.price);
+    const cdLength = Math.abs(D.price - C.price);
+    const symmetryRatio = Math.min(abLength, cdLength) / Math.max(abLength, cdLength);
+    
+    if (symmetryRatio > 0.8) {
+      score += 15;
+      count++;
+      factors.push('Strong AB=CD Symmetry');
+    }
+
+    // Volume confirmation
+    const avgVolume = marketData.slice(-20).reduce((sum, d) => sum + d.volume, 0) / 20;
+    const currentVolume = marketData[D.index].volume;
+    
+    if (currentVolume > avgVolume * 1.2) {
+      score += 10;
+      count++;
+      factors.push('Volume Confirmation');
+    }
+
+    // Time confluence
+    const timeRatio = (C.index - B.index) / (B.index - A.index);
+    if (timeRatio >= 0.618 && timeRatio <= 1.618) {
+      score += 10;
+      count++;
+      factors.push('Time Fibonacci Ratio');
+    }
+
+    return { score, count, factors };
+  }
+
+  private async createSignalFromPattern(strategy: Strategy, symbol: string, pattern: ABCDPattern, marketData: MarketData[]): Promise<Signal | null> {
+    const currentPrice = marketData[marketData.length - 1].close;
+    
+    // Check if currentPrice is null
+    if (currentPrice === null) {
+      return null;
+    }
+    
+    const direction = pattern.direction === 'bullish' ? 'CALL' : 'PUT';
+    
+    // Calculate entry levels
+    const entryTolerance = currentPrice * 0.002; // 0.2% tolerance
+    const entryRange = {
+      min: parseFloat((currentPrice - entryTolerance).toFixed(2)),
+      max: parseFloat((currentPrice + entryTolerance).toFixed(2))
+    };
+
+    // Calculate targets and stops based on Fibonacci levels
+    let targetPrice: number;
+    let stopLoss: number;
+
+    if (pattern.direction === 'bullish') {
+      targetPrice = pattern.fibonacciTargets.ext127;
+      stopLoss = pattern.C.price - (pattern.abLength * 0.236); // 23.6% below C
+    } else {
+      targetPrice = pattern.fibonacciTargets.ext127;
+      stopLoss = pattern.C.price + (pattern.abLength * 0.236); // 23.6% above C
+    }
+
+    const riskReward = Math.abs(targetPrice - currentPrice) / Math.abs(stopLoss - currentPrice);
+
+    // Calculate position size (2-4% of account based on confidence)
+    const baseSize = 50000; // Mock account size
+    const confidenceMultiplier = pattern.strength / 100;
+    const positionSize = Math.floor(baseSize * 0.03 * confidenceMultiplier);
+
+    const signal: Signal = {
+      id: 0, // Will be set by database
+      timestamp: new Date(),
+      strategyId: strategy.id,
+      symbol,
+      direction,
+      confidence: pattern.strength,
+      currentPrice,
+      entryRange,
+      targetPrice: parseFloat(targetPrice.toFixed(2)),
+      stopLoss: parseFloat(stopLoss.toFixed(2)),
+      riskReward: parseFloat(riskReward.toFixed(1)),
+      positionSize,
+      pattern: 'ABCD Fibonacci Pattern',
+      reasoning: this.generateReasoning(pattern, symbol),
+      confluence: this.generateConfluenceDescription(pattern),
+      marketContext: this.getMarketContext(),
+      expectedHold: this.getExpectedHoldTime(pattern),
+      optimalEntry: 'Next 15-30 minutes',
+      status: 'active',
+      entryPrice: null,
+      optionsData: this.generateOptionsData(currentPrice, direction, pattern)
+    };
+
+    return signal;
+  }
+
+  private generateReasoning(pattern: ABCDPattern, symbol: string): string {
+    const direction = pattern.direction === 'bullish' ? 'upward' : 'downward';
+    const fibLevel = pattern.direction === 'bullish' ? '127% extension' : '127% extension';
+    
+    return `ABCD harmonic pattern completion detected in ${symbol} with ${pattern.strength.toFixed(1)}% confidence. ` +
+           `Pattern shows strong Fibonacci confluence at ${fibLevel} level with ${direction} bias. ` +
+           `AB=CD symmetry confirms high-probability reversal setup with favorable risk/reward ratio.`;
+  }
+
+  private generateConfluenceDescription(pattern: ABCDPattern): string {
+    const factors = [];
+    
+    factors.push('ABCD Pattern Completion');
+    factors.push('Fibonacci Extension Confluence');
+    
+    if (pattern.strength > 85) {
+      factors.push('Strong EMA Alignment');
+    }
+    
+    return factors.join(' + ');
+  }
+
+  private getMarketContext(): string | null {
+    const contexts = [
+      'Harmonic pattern completion',
+      'Fibonacci confluence zone',
+      'Pattern recognition alert',
+      null
+    ];
+    return contexts[Math.floor(Math.random() * contexts.length)] ?? null;
+  }
+
+  private getExpectedHoldTime(pattern: ABCDPattern): string {
+    // ABCD patterns typically play out over several sessions
+    return pattern.strength > 85 ? '2-5 days' : '1-3 days';
+  }
+
+  private generateOptionsData(currentPrice: number, direction: string, pattern: ABCDPattern) {
+    const strike = Math.round(currentPrice);
+    const expiry = pattern.strength > 85 ? '1WTE' : '2WTE';
+    
+    return {
+      strike,
+      expiry,
+      impliedVol: parseFloat((Math.random() * 10 + 15).toFixed(1)), // 15-25% IV
+      delta: parseFloat((Math.random() * 0.4 + 0.4).toFixed(2)), // 0.4-0.8 delta
+      gamma: parseFloat((Math.random() * 0.1 + 0.05).toFixed(3)), // 0.05-0.15 gamma
+      openInterest: Math.floor(Math.random() * 50000) + 25000 // 25k-75k OI
+    };
+  }
+}

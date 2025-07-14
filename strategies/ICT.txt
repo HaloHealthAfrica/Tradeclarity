@@ -1,0 +1,125 @@
+# strategy_engine.py (IMPROVED)
+from datetime import datetime, time
+import data_fetcher
+import config
+import pandas as pd
+
+# Helper function to detect SMT divergence
+def detect_smt_divergence(df_main, df_corr):
+    if df_main is None or df_corr is None or len(df_main) < 3 or len(df_corr) < 3:
+        return "neutral"
+    main_made_lower_low = df_main['low'].iloc[1] < df_main['low'].iloc[2]
+    corr_failed_lower_low = df_corr['low'].iloc[1] > df_corr['low'].iloc[2]
+    if main_made_lower_low and corr_failed_lower_low:
+        return "bullish"
+    return "neutral"
+
+# Helper function to check for an expansion candle
+def is_expansion_candle(candle, atr):
+    return (candle['high'] - candle['low']) > (atr * 0.7)
+
+# Helper function to check for a rejection of an FVG
+def check_fvg_rejection(candle, fvg_zone):
+    if not isinstance(fvg_zone, dict):
+        return False
+    if fvg_zone.get('type') == 'bullish' and candle['low'] < fvg_zone['top'] and candle['close'] > fvg_zone['top']:
+        return True
+    return False
+
+# Calculates a confidence score for a signal
+def calculate_confidence(factors):
+    """Calculates a confidence score 1-10 based on confluence factors."""
+    score = 5  # Base score for a valid FVG rejection
+    if factors.get('smt_confirmed'): score += 2
+    if factors.get('htf_aligned'): score += 2
+    if factors.get('vwap_confluent'): score += 1
+    return min(score, 10)
+
+def generate_signals(instruments):
+    """
+    Generates trading signals based on a confluence of technical factors,
+    including a VIX regime filter, confidence scoring, and dynamic exits.
+    """
+    signals = []
+
+    # VIX Regime Filter
+    vix_df = data_fetcher.fetch_time_series('VIX', interval='5min', output_size=20)
+    if vix_df is None:
+        return [{"status": "Could not fetch VIX data."}]
+    vix_df['sma_10'] = vix_df['close'].rolling(10).mean()
+    current_vix = vix_df['close'].iloc[-1]
+    vix_is_rising = current_vix > vix_df['sma_10'].iloc[-1]
+
+    if current_vix > 22 and vix_is_rising:
+        return [{"status": f"No signals: High-risk VIX regime (VIX: {current_vix:.2f}, rising)."}]
+
+    for symbol in instruments:
+        # 1. Fetch all necessary data
+        vwap = data_fetcher.fetch_vwap(symbol)
+        df_main = data_fetcher.fetch_time_series(symbol)
+        df_main = data_fetcher.calculate_indicators(df_main)
+
+        if df_main is None or df_main.empty or vwap is None or len(df_main) < 5:
+            continue
+
+        # 2. Define key candles and zones for analysis
+        last_closed_candle = df_main.iloc[1]
+        fvg_zone_to_test = df_main.iloc[2]['fvg_zone']
+        price = last_closed_candle['close']
+        atr = last_closed_candle['atr']
+
+        # 3. Primary Setup Condition: FVG Rejection
+        has_fvg_rejection = check_fvg_rejection(last_closed_candle, fvg_zone_to_test)
+        if not has_fvg_rejection:
+            continue
+
+        # 4. Check all other confluence factors
+        htf_bias = data_fetcher.get_htf_bias(symbol)
+        is_vwap_confluent = abs(price - vwap) / vwap < 0.005
+
+        corr_symbol = config.CORRELATED_ASSETS.get(symbol)
+        df_corr = data_fetcher.fetch_time_series(corr_symbol)
+        smt_status = detect_smt_divergence(df_main, df_corr)
+
+        # 5. Define the final Bullish Setup
+        is_bullish = (
+            fvg_zone_to_test.get('type') == 'bullish' and
+            htf_bias == "bullish" and
+            smt_status == "bullish" and
+            is_expansion_candle(last_closed_candle, atr)
+        )
+
+        if is_bullish:
+            # 6. Calculate confidence score and dynamic exit plan
+            confidence_factors = {
+                'smt_confirmed': True,
+                'htf_aligned': True,
+                'vwap_confluent': is_vwap_confluent
+            }
+            confidence_score = calculate_confidence(confidence_factors)
+
+            # Suggest SL below the low of the rejection candle, adjusted by ATR
+            suggested_sl = last_closed_candle['low'] - (atr * 0.5)
+            # Suggest TP based on a 2:1 Reward/Risk ratio
+            risk_per_share = price - suggested_sl
+            suggested_tp = price + (risk_per_share * 2)
+
+            signals.append({
+                "symbol": symbol,
+                "direction": "CALL",
+                "price": price,
+                "confidence": f"{confidence_score}/10",
+                "reason": "Bullish FVG rejection with SMT & HTF alignment.",
+                "exit_plan": {
+                    "suggested_stop_loss": round(suggested_sl, 2),
+                    "suggested_take_profit": round(suggested_tp, 2),
+                    "atr_at_signal": round(atr, 2)
+                }
+            })
+
+    if not signals:
+        return [{"status": "No high-quality setups found."}]
+
+    return signals
+
+

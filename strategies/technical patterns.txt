@@ -1,0 +1,31 @@
+# data_fetcher.py (calculate_indicators function)
+
+def calculate_indicators(df):
+    """Calculates ATR and identifies FVG & OB zones."""
+    if df is None or len(df) < 3:
+        return df
+
+    # ATR Calculation
+    df['prev_close'] = df['close'].shift(1)
+    df['tr'] = abs(df['high'] - df['low']).combine_latest(abs(df['high'] - df['prev_close']), abs(df['low'] - df['prev_close'])).max(axis=1)
+    df['atr'] = df['tr'].ewm(alpha=1/14, adjust=False).mean()
+
+    # FVG Identification
+    df['high_1_ago'] = df['high'].shift(2)
+    df['low_1_ago'] = df['low'].shift(2)
+    bullish_fvg_mask = df['low'] > df['high_1_ago']
+    df.loc[bullish_fvg_mask, 'fvg_zone'] = df[bullish_fvg_mask].apply(
+        lambda row: {'type': 'bullish', 'top': row['low'], 'bottom': row['high_1_ago']}, axis=1
+    )
+    bearish_fvg_mask = df['high'] < df['low_1_ago']
+    df.loc[bearish_fvg_mask, 'fvg_zone'] = df[bearish_fvg_mask].apply(
+        lambda row: {'type': 'bearish', 'top': row['low_1_ago'], 'bottom': row['high']}, axis=1
+    )
+    
+    # Order Block (OB) Identification
+    is_bullish_ob = (df['close'].shift(1) < df['open'].shift(1)) & (df['close'] > df['high'].shift(1))
+    df.loc[is_bullish_ob, 'ob_zone'] = df[is_bullish_ob].apply(
+        lambda row: {'type': 'bullish', 'top': row['high'].shift(1), 'bottom': row['low'].shift(1)}, axis=1
+    )
+
+    return df.sort_values('datetime', ascending=False).reset_index(drop=True)
