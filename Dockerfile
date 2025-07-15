@@ -15,8 +15,8 @@ COPY . .
 # Create logs directory
 RUN mkdir -p logs
 
-# Expose port
-EXPOSE 3000
+# Expose port (Zeabur uses 8080)
+EXPOSE 8080
 
-# Use the simple server to avoid build issues
-CMD ["npm", "run", "start:simple"] 
+# Use the production server to avoid ts-node dependency
+CMD ["npm", "run", "start:prod"] 
