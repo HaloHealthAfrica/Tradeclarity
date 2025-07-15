@@ -515,7 +515,7 @@ export class Backtester {
   /**
    * Fetch historical data using TwelveData API
    */
-  private async fetchHistoricalData(symbol: string, startDate: string, endDate: string): Promise<MarketDataPoint[]> {
+  protected async fetchHistoricalData(symbol: string, startDate: string, endDate: string): Promise<MarketDataPoint[]> {
     try {
       logger.info('Fetching historical data', { symbol, startDate, endDate });
 

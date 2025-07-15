@@ -1,8 +1,5 @@
 import React from 'react';
 import toast, { Toast, ToastOptions } from 'react-hot-toast';
-import { createModuleLogger } from '../../../utils/logger';
-
-const logger = createModuleLogger('Toast');
 
 // Custom toast styles
 const toastStyles = {
@@ -164,12 +161,25 @@ export class ToastService {
         toastOptions
       );
     } catch (error) {
-      logger.error('Error showing toast:', error as Error);
+      console.error('Error showing toast:', error as Error);
       // Fallback to default toast
-      return toast[message.type](message.message, {
-        duration: message.duration || 4000,
-        ...options,
-      });
+      if (message.type === 'success') {
+        return toast.success(message.message, {
+          duration: message.duration || 4000,
+          ...options,
+        });
+      } else if (message.type === 'error') {
+        return toast.error(message.message, {
+          duration: message.duration || 4000,
+          ...options,
+        });
+      } else {
+        // For 'warning' and 'info', use generic toast
+        return toast(message.message, {
+          duration: message.duration || 4000,
+          ...options,
+        });
+      }
     }
   }
 

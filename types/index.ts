@@ -49,7 +49,21 @@ export interface IStorage {
   set(key: string, value: any): Promise<void>;
   delete(key: string): Promise<void>;
   clear(): Promise<void>;
-  keys(): Promise<string[]>;
+}
+
+// Risk management types
+export interface RiskManagement {
+  calculatePositionSize(price: number, entry: number, stopLoss: number): number;
+  calculateStopLoss(entry: number, riskPercent: number): number;
+  calculateTakeProfit(entry: number, rewardPercent: number): number;
+}
+
+// Market context types
+export interface MarketContext {
+  trend: 'bullish' | 'bearish' | 'neutral';
+  volatility: 'low' | 'medium' | 'high';
+  volume: 'low' | 'medium' | 'high';
+  regime: 'trending' | 'ranging' | 'volatile';
 }
 
 // Configuration types

@@ -1,9 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createChart, IChartApi, ISeriesApi, CandlestickData, LineData } from 'lightweight-charts';
 import { format } from 'date-fns';
-import { createModuleLogger } from '../../../utils/logger';
-
-const logger = createModuleLogger('PriceChart');
 
 interface PriceChartProps {
   symbol: string;
@@ -92,10 +89,6 @@ export const PriceChart: React.FC<PriceChartProps> = ({
             type: 'volume',
           },
           priceScaleId: '',
-          scaleMargins: {
-            top: 0.8,
-            bottom: 0,
-          },
         });
         volumeSeriesRef.current = volumeSeries;
       }
@@ -135,7 +128,7 @@ export const PriceChart: React.FC<PriceChartProps> = ({
         }
       };
     } catch (err) {
-      logger.error('Error creating chart:', err as Error);
+      console.error('Error creating chart:', err as Error);
       setError('Failed to create chart');
     }
   }, [theme, showVolume, width]);
@@ -159,7 +152,7 @@ export const PriceChart: React.FC<PriceChartProps> = ({
           chartRef.current.timeScale().fitContent();
         }
       } catch (err) {
-        logger.error('Error updating chart data:', err as Error);
+        console.error('Error updating chart data:', err as Error);
         setError('Failed to update chart data');
       }
     }
@@ -176,7 +169,7 @@ export const PriceChart: React.FC<PriceChartProps> = ({
       if (lastData) {
         const newData = {
           ...lastData,
-          time: Date.now() / 1000,
+          time: new Date().toISOString(), // Use ISO string for time
           close: lastData.close * (1 + (Math.random() - 0.5) * 0.01),
           high: Math.max(lastData.high, lastData.close * (1 + Math.random() * 0.01)),
           low: Math.min(lastData.low, lastData.close * (1 - Math.random() * 0.01)),

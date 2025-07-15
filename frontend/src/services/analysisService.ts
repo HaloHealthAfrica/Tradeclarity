@@ -1,4 +1,4 @@
-import { apiClient } from './apiClient';
+import { api } from './api';
 
 export interface BacktestConfig {
   strategy: string;
@@ -101,14 +101,14 @@ export interface MarketDataStats {
 }
 
 export class AnalysisService {
-  private baseUrl = '/eod';
+  private baseUrl = '/api';
 
   /**
    * Run backtest
    */
   async runBacktest(config: BacktestConfig): Promise<BacktestResult> {
     try {
-      const response = await apiClient.post(`${this.baseUrl}/backtest/run`, config);
+      const response = await api.post(`${this.baseUrl}/backtest/run`, config);
       return response.data.result;
     } catch (error) {
       console.error('Error running backtest:', error);
@@ -121,7 +121,7 @@ export class AnalysisService {
    */
   async compareStrategies(strategies: string[], config: Omit<BacktestConfig, 'strategy'>): Promise<BacktestResult[]> {
     try {
-      const response = await apiClient.post(`${this.baseUrl}/backtest/compare`, {
+      const response = await api.post(`${this.baseUrl}/backtest/compare`, {
         strategies,
         config
       });
@@ -137,7 +137,7 @@ export class AnalysisService {
    */
   async optimizeStrategy(strategy: string, config: Omit<BacktestConfig, 'strategy'>, parameters: Record<string, number[]>): Promise<{ bestParams: Record<string, number>; bestResult: BacktestResult }> {
     try {
-      const response = await apiClient.post(`${this.baseUrl}/backtest/optimize`, {
+      const response = await api.post(`${this.baseUrl}/backtest/optimize`, {
         strategy,
         config,
         parameters
@@ -154,7 +154,7 @@ export class AnalysisService {
    */
   async runOptimization(config: OptimizationConfig): Promise<OptimizationResult> {
     try {
-      const response = await apiClient.post(`${this.baseUrl}/optimize/run`, config);
+      const response = await api.post(`${this.baseUrl}/optimize/run`, config);
       return response.data.result;
     } catch (error) {
       console.error('Error running optimization:', error);
@@ -167,7 +167,7 @@ export class AnalysisService {
    */
   async compareOptimizations(configs: OptimizationConfig[]): Promise<{ config: OptimizationConfig; result: OptimizationResult }[]> {
     try {
-      const response = await apiClient.post(`${this.baseUrl}/optimize/compare`, { configs });
+      const response = await api.post(`${this.baseUrl}/optimize/compare`, { configs });
       return response.data.results;
     } catch (error) {
       console.error('Error comparing optimizations:', error);
@@ -180,7 +180,7 @@ export class AnalysisService {
    */
   async getOptimizationHistory(): Promise<any[]> {
     try {
-      const response = await apiClient.get(`${this.baseUrl}/optimize/history`);
+      const response = await api.get(`${this.baseUrl}/optimize/history`);
       return response.data.history;
     } catch (error) {
       console.error('Error getting optimization history:', error);
@@ -193,7 +193,7 @@ export class AnalysisService {
    */
   async storeMarketData(data: any[]): Promise<void> {
     try {
-      await apiClient.post(`${this.baseUrl}/market-data/store`, { data });
+      await api.post(`${this.baseUrl}/market-data/store`, { data });
     } catch (error) {
       console.error('Error storing market data:', error);
       throw error;
@@ -205,7 +205,7 @@ export class AnalysisService {
    */
   async getMarketData(query: MarketDataQuery): Promise<any[]> {
     try {
-      const response = await apiClient.get(`${this.baseUrl}/market-data/retrieve`, {
+      const response = await api.get(`${this.baseUrl}/market-data/retrieve`, {
         params: query
       });
       return response.data.data;
@@ -220,7 +220,7 @@ export class AnalysisService {
    */
   async getMarketDataStats(symbol: string): Promise<MarketDataStats> {
     try {
-      const response = await apiClient.get(`${this.baseUrl}/market-data/stats/${symbol}`);
+      const response = await api.get(`${this.baseUrl}/market-data/stats/${symbol}`);
       return response.data.stats;
     } catch (error) {
       console.error('Error getting market data stats:', error);
@@ -239,7 +239,7 @@ export class AnalysisService {
     recommendations: string[];
   }> {
     try {
-      const response = await apiClient.get(`${this.baseUrl}/market-data/quality/${symbol}`);
+      const response = await api.get(`${this.baseUrl}/market-data/quality/${symbol}`);
       return response.data.report;
     } catch (error) {
       console.error('Error getting data quality report:', error);
@@ -252,7 +252,7 @@ export class AnalysisService {
    */
   async exportMarketData(query: MarketDataQuery, format: 'json' | 'csv' = 'json'): Promise<string> {
     try {
-      const response = await apiClient.get(`${this.baseUrl}/market-data/export`, {
+      const response = await api.get(`${this.baseUrl}/market-data/export`, {
         params: { query, format }
       });
       return response.data;
@@ -267,7 +267,7 @@ export class AnalysisService {
    */
   async generateEODReport(date: string, symbols: string[], includeBacktest = false, backtestConfig?: BacktestConfig): Promise<any> {
     try {
-      const response = await apiClient.post(`${this.baseUrl}/reports/generate`, {
+      const response = await api.post(`${this.baseUrl}/reports/generate`, {
         date,
         symbols,
         includeBacktest,
@@ -285,7 +285,7 @@ export class AnalysisService {
    */
   async getEODReport(date: string, symbols?: string[]): Promise<any> {
     try {
-      const response = await apiClient.get(`${this.baseUrl}/reports/${date}`, {
+      const response = await api.get(`${this.baseUrl}/reports/${date}`, {
         params: { symbols }
       });
       return response.data.report;
@@ -300,7 +300,7 @@ export class AnalysisService {
    */
   async getPerformanceSummary(startDate: string, endDate: string, symbols?: string[]): Promise<any> {
     try {
-      const response = await apiClient.get(`${this.baseUrl}/performance/summary`, {
+      const response = await api.get(`${this.baseUrl}/performance/summary`, {
         params: { startDate, endDate, symbols }
       });
       return response.data.summary;
@@ -315,7 +315,7 @@ export class AnalysisService {
    */
   async compareStrategyPerformance(strategies: string[], startDate: string, endDate: string, symbols?: string[]): Promise<any> {
     try {
-      const response = await apiClient.get(`${this.baseUrl}/performance/compare`, {
+      const response = await api.get(`${this.baseUrl}/performance/compare`, {
         params: { strategies, startDate, endDate, symbols }
       });
       return response.data.comparison;
@@ -330,7 +330,7 @@ export class AnalysisService {
    */
   async exportAnalysisData(format: 'json' | 'csv' | 'pdf', startDate: string, endDate: string, symbols?: string[], reportType?: string): Promise<string> {
     try {
-      const response = await apiClient.get(`${this.baseUrl}/export/${format}`, {
+      const response = await api.get(`${this.baseUrl}/export/${format}`, {
         params: { startDate, endDate, symbols, reportType }
       });
       return response.data;

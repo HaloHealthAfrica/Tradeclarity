@@ -1,0 +1,9 @@
+@echo off
+echo Rebuilding frontend...
+cd frontend
+echo Installing dependencies...
+call npm install
+echo Building frontend...
+call npm run build
+echo Frontend rebuild complete!
+pause 

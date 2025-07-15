@@ -40,6 +40,16 @@ export const createStrategy = (config: StrategyConfig): Strategy => {
   };
 };
 
+// Add missing exports
+export const loadAllStrategies = (): void => {
+  logger.info('Loading all strategies...');
+  // This will be called when the module is imported
+};
+
+export const loadStrategy = (name: string): Strategy | undefined => {
+  return getStrategyConfig(name);
+};
+
 // Export default strategies
 export const defaultStrategies: Strategy[] = [
   {

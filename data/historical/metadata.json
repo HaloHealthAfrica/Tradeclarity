@@ -1,0 +1,52 @@
+[
+  {
+    "symbol": "AAPL",
+    "interval": "1day",
+    "startDate": "2025-06-15",
+    "endDate": "2025-07-15",
+    "dataPoints": 19,
+    "lastUpdated": "2025-07-15T20:15:22.241Z",
+    "source": "twelvedata",
+    "filePath": "C:\\Users\\Edwin\\Downloads\\PaperTradingSystem\\data\\historical\\AAPL_1day.json"
+  },
+  {
+    "symbol": "QQQ",
+    "interval": "5min",
+    "startDate": "2024-01-02",
+    "endDate": "2025-07-15",
+    "dataPoints": 5000,
+    "lastUpdated": "2025-07-15T19:37:33.259Z",
+    "source": "twelvedata",
+    "filePath": "C:\\Users\\Edwin\\Downloads\\PaperTradingSystem\\data\\historical\\QQQ_5min.json"
+  },
+  {
+    "symbol": "QQQ",
+    "interval": "1min",
+    "startDate": "2020-01-02",
+    "endDate": "2025-07-15",
+    "dataPoints": 5000,
+    "lastUpdated": "2025-07-15T19:38:10.015Z",
+    "source": "twelvedata",
+    "filePath": "C:\\Users\\Edwin\\Downloads\\PaperTradingSystem\\data\\historical\\QQQ_1min.json"
+  },
+  {
+    "symbol": "AAPL",
+    "interval": "1min",
+    "startDate": "2025-06-25 14:10:00",
+    "endDate": "2025-07-15 15:59:00",
+    "dataPoints": 5000,
+    "lastUpdated": "2025-07-15T20:08:03.302Z",
+    "source": "twelvedata",
+    "filePath": "C:\\Users\\Edwin\\Downloads\\PaperTradingSystem\\data\\historical\\AAPL_1min.json"
+  },
+  {
+    "symbol": "AAPL",
+    "interval": "5min",
+    "startDate": "2025-06-15",
+    "endDate": "2025-07-15",
+    "dataPoints": 1446,
+    "lastUpdated": "2025-07-15T20:15:33.009Z",
+    "source": "twelvedata",
+    "filePath": "C:\\Users\\Edwin\\Downloads\\PaperTradingSystem\\data\\historical\\AAPL_5min.json"
+  }
+]

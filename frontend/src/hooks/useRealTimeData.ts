@@ -1,17 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useQuery, useQueryClient } from 'react-query';
-import { createModuleLogger } from '../../utils/logger';
-
-const logger = createModuleLogger('useRealTimeData');
-
-interface MarketData {
-  symbol: string;
-  price: number;
-  change: number;
-  changePercent: number;
-  volume: number;
-  timestamp: string;
-}
+import { api, MarketData } from '../services/api';
 
 interface HistoricalData {
   symbol: string;
@@ -60,44 +48,20 @@ export const useRealTimeData = (options: RealTimeDataOptions): UseRealTimeDataRe
   
   const wsRef = useRef<WebSocket | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const queryClient = useQueryClient();
+  const mountedRef = useRef(true);
 
-  // Fetch real-time data
+  // Fetch real-time data from API
   const fetchRealTimeData = useCallback(async () => {
+    if (!mountedRef.current) return;
+
     try {
-      const response = await fetch('/api/market-data/batch', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ symbols }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const result = await response.json();
-      
-      if (result.success) {
-        const marketData = Object.values(result.data).map((item: any) => ({
-          symbol: item.symbol,
-          price: item.price,
-          change: item.change,
-          changePercent: item.changePercent,
-          volume: item.volume,
-          timestamp: item.timestamp,
-        }));
-
-        setData(marketData);
-        setError(null);
-        setIsConnected(true);
-        setRetryCount(0);
-      } else {
-        throw new Error(result.error || 'Failed to fetch market data');
-      }
+      const marketData = await api.getMarketQuotes(symbols);
+      setData(marketData);
+      setError(null);
+      setIsConnected(true);
+      setRetryCount(0);
     } catch (err) {
-      logger.error('Error fetching real-time data:', err as Error);
+      console.error('Error fetching real-time data:', err);
       setError(err instanceof Error ? err.message : 'Unknown error');
       setIsConnected(false);
       
@@ -108,31 +72,43 @@ export const useRealTimeData = (options: RealTimeDataOptions): UseRealTimeDataRe
     }
   }, [symbols, interval, maxRetries, retryCount]);
 
-  // Fetch historical data
+  // Fetch historical data for a symbol
   const fetchHistoricalData = useCallback(async (symbol: string) => {
-    try {
-      const response = await fetch(`/api/market-data/historical/${symbol}?interval=1d&limit=100`);
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
+    if (!mountedRef.current) return;
 
-      const result = await response.json();
-      
-      if (result.success) {
-        setHistoricalData(prev => ({
-          ...prev,
-          [symbol]: result.data,
-        }));
-      } else {
-        throw new Error(result.error || 'Failed to fetch historical data');
-      }
+    try {
+      // For now, we'll use mock historical data since the backend doesn't have historical endpoints yet
+      const mockHistoricalData: HistoricalData[] = Array.from({ length: 30 }, (_, i) => {
+        const date = new Date();
+        date.setDate(date.getDate() - (29 - i));
+        const basePrice = 100 + Math.random() * 50;
+        const open = basePrice + (Math.random() - 0.5) * 10;
+        const close = open + (Math.random() - 0.5) * 8;
+        const high = Math.max(open, close) + Math.random() * 5;
+        const low = Math.min(open, close) - Math.random() * 5;
+        
+        return {
+          symbol,
+          timestamp: date.toISOString(),
+          open,
+          high,
+          low,
+          close,
+          volume: Math.floor(Math.random() * 1000000) + 100000,
+          interval: '1d'
+        };
+      });
+
+      setHistoricalData(prev => ({
+        ...prev,
+        [symbol]: mockHistoricalData,
+      }));
     } catch (err) {
-      logger.error(`Error fetching historical data for ${symbol}:`, err as Error);
+      console.error(`Error fetching historical data for ${symbol}:`, err);
     }
   }, []);
 
-  // WebSocket connection
+  // WebSocket connection for real-time updates
   const connectWebSocket = useCallback(() => {
     if (!useWebSocket) return;
 
@@ -141,14 +117,14 @@ export const useRealTimeData = (options: RealTimeDataOptions): UseRealTimeDataRe
       const ws = new WebSocket(wsUrl);
       
       ws.onopen = () => {
-        logger.info('WebSocket connected');
+        console.log('WebSocket connected for real-time data');
         setIsConnected(true);
         setError(null);
         setRetryCount(0);
         
         // Subscribe to symbols
         ws.send(JSON.stringify({
-          type: 'subscribe',
+          type: 'subscribe_market_data',
           symbols,
         }));
       };
@@ -172,34 +148,34 @@ export const useRealTimeData = (options: RealTimeDataOptions): UseRealTimeDataRe
             });
           }
         } catch (err) {
-          logger.error('Error parsing WebSocket message:', err as Error);
+          console.error('Error parsing WebSocket message:', err);
         }
       };
 
       ws.onclose = () => {
-        logger.info('WebSocket disconnected');
+        console.log('WebSocket disconnected');
         setIsConnected(false);
         
-        if (autoReconnect && retryCount < maxRetries) {
+        if (autoReconnect && retryCount < maxRetries && mountedRef.current) {
           setTimeout(connectWebSocket, interval * 2);
           setRetryCount(prev => prev + 1);
         }
       };
 
       ws.onerror = (error) => {
-        logger.error('WebSocket error:', error);
+        console.error('WebSocket error:', error);
         setError('WebSocket connection error');
         setIsConnected(false);
       };
 
       wsRef.current = ws;
     } catch (err) {
-      logger.error('Error creating WebSocket connection:', err as Error);
+      console.error('Error creating WebSocket connection:', err);
       setError('Failed to create WebSocket connection');
     }
   }, [useWebSocket, symbols, interval, autoReconnect, maxRetries, retryCount]);
 
-  // Polling setup
+  // Polling setup for API-based updates
   const startPolling = useCallback(() => {
     if (useWebSocket) return;
 
@@ -212,16 +188,20 @@ export const useRealTimeData = (options: RealTimeDataOptions): UseRealTimeDataRe
 
   // Initial data fetch
   useEffect(() => {
-    fetchRealTimeData();
-    
-    // Fetch historical data for each symbol
-    symbols.forEach(symbol => {
-      fetchHistoricalData(symbol);
-    });
+    if (symbols.length > 0) {
+      fetchRealTimeData();
+      
+      // Fetch historical data for each symbol
+      symbols.forEach(symbol => {
+        fetchHistoricalData(symbol);
+      });
+    }
   }, [fetchRealTimeData, fetchHistoricalData, symbols]);
 
   // Start polling or WebSocket
   useEffect(() => {
+    if (symbols.length === 0) return;
+
     if (useWebSocket) {
       connectWebSocket();
     } else {
@@ -236,13 +216,20 @@ export const useRealTimeData = (options: RealTimeDataOptions): UseRealTimeDataRe
         wsRef.current.close();
       }
     };
-  }, [useWebSocket, connectWebSocket, startPolling]);
+  }, [useWebSocket, connectWebSocket, startPolling, symbols]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   // Subscribe to new symbol
   const subscribe = useCallback((symbol: string) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({
-        type: 'subscribe',
+        type: 'subscribe_market_data',
         symbols: [symbol],
       }));
     }
@@ -255,23 +242,21 @@ export const useRealTimeData = (options: RealTimeDataOptions): UseRealTimeDataRe
   const unsubscribe = useCallback((symbol: string) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({
-        type: 'unsubscribe',
+        type: 'unsubscribe_market_data',
         symbols: [symbol],
       }));
     }
   }, []);
 
-  // Refetch function
+  // Manual refetch
   const refetch = useCallback(() => {
-    setError(null);
-    setRetryCount(0);
     fetchRealTimeData();
   }, [fetchRealTimeData]);
 
   return {
     data,
     historicalData,
-    isLoading: !isConnected && retryCount === 0,
+    isLoading: data.length === 0 && !error,
     error,
     refetch,
     subscribe,

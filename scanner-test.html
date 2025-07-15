@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Market Scanner - Paper Trading System</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #3b82f6;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --info: #06b6d4;
+            --bg-primary: #0f0f23;
+            --bg-secondary: #1a1a2e;
+            --bg-hover: #252540;
+            --text-primary: #ffffff;
+            --text-muted: #a1a1aa;
+            --border-primary: #2d2d44;
+            --border-secondary: #3f3f5f;
+            --border-focus: #3b82f6;
+            --radius-sm: 4px;
+            --radius-md: 8px;
+            --radius-lg: 12px;
+            --spacing-xs: 4px;
+            --spacing-sm: 8px;
+            --spacing-md: 16px;
+            --spacing-lg: 24px;
+            --spacing-xl: 32px;
+            --transition-fast: 0.15s ease;
+            --transition-normal: 0.3s ease;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, var(--bg-primary) 0%, #1a1a2e 100%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+
+        .app-container {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 280px;
+            background: rgba(26, 26, 46, 0.95);
+            backdrop-filter: blur(10px);
+            border-right: 1px solid var(--border-primary);
+            padding: var(--spacing-lg);
+            position: fixed;
+            height: 100vh;
+            overflow-y: auto;
+        }
+
+        .sidebar-header {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-sm);
+            margin-bottom: var(--spacing-xl);
+            padding-bottom: var(--spacing-lg);
+            border-bottom: 1px solid var(--border-primary);
+        }
+
+        .logo {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, var(--primary), #1d4ed8);
+            border-radius: var(--radius-md);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 18px;
+        }
+
+        .brand-name {
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--primary), #1d4ed8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .nav-menu {
+            list-style: none;
+        }
+
+        .nav-item {
+            margin-bottom: var(--spacing-sm);
+        }
+
+        .nav-link {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-md);
+            padding: var(--spacing-md);
+            border-radius: var(--radius-md);
+            color: var(--text-muted);
+            text-decoration: none;
+            transition: all var(--transition-fast);
+            position: relative;
+        }
+
+        .nav-link:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+
+        .nav-link.active {
+            background: linear-gradient(135deg, var(--primary), #1d4ed8);
+            color: white;
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+        }
+
+        .nav-icon {
+            width: 20px;
+            text-align: center;
+        }
+
+        .nav-text {
+            font-weight: 500;
+        }
+
+        .nav-description {
+            font-size: 0.75rem;
+            opacity: 0.7;
+            margin-top: 2px;
+        }
+
+        /* Main Content */
+        .main-content {
+            flex: 1;
+            margin-left: 280px;
+            padding: var(--spacing-xl);
+        }
+
+        .page-header {
+            margin-bottom: var(--spacing-xl);
+        }
+
+        .page-title {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: var(--spacing-sm);
+            background: linear-gradient(135deg, var(--text-primary), #e2e8f0);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .page-subtitle {
+            color: var(--text-muted);
+            font-size: 1.1rem;
+        }
+
+        /* Cards */
+        .card {
+            background: rgba(26, 26, 46, 0.8);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--border-primary);
+            border-radius: var(--radius-lg);
+            padding: var(--spacing-xl);
+            margin-bottom: var(--spacing-lg);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            transition: all var(--transition-normal);
+        }
+
+        .card:hover {
+            border-color: var(--border-focus);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: var(--spacing-lg);
+            padding-bottom: var(--spacing-md);
+            border-bottom: 1px solid var(--border-primary);
+        }
+
+        .card-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .card-actions {
+            display: flex;
+            gap: var(--spacing-sm);
+        }
+
+        /* Buttons */
+        .btn {
+            padding: var(--spacing-md) var(--spacing-lg);
+            border: none;
+            border-radius: var(--radius-md);
+            font-weight: 600;
+            font-size: 0.875rem;
+            cursor: pointer;
+            transition: all var(--transition-fast);
+            display: inline-flex;
+            align-items: center;
+            gap: var(--spacing-sm);
+            text-decoration: none;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary), #1d4ed8);
+            color: white;
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(59, 130, 246, 0.4);
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, var(--success), #059669);
+            color: white;
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+        }
+
+        .btn-success:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, var(--danger), #dc2626);
+            color: white;
+            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+        }
+
+        .btn-danger:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(239, 68, 68, 0.4);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        /* Grid Layout */
+        .grid {
+            display: grid;
+            gap: var(--spacing-lg);
+        }
+
+        .grid-cols-2 {
+            grid-template-columns: repeat(2, 1fr);
+        }
+
+        @media (max-width: 768px) {
+            .grid-cols-2 {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Symbol Selection */
+        .symbol-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: var(--spacing-md);
+            margin-top: var(--spacing-md);
+        }
+
+        .symbol-checkbox {
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-sm);
+            padding: var(--spacing-md);
+            border: 2px solid var(--border-primary);
+            border-radius: var(--radius-md);
+            cursor: pointer;
+            transition: all var(--transition-fast);
+            background: var(--bg-secondary);
+        }
+
+        .symbol-checkbox:hover {
+            border-color: var(--primary);
+            background: var(--bg-hover);
+            transform: translateY(-2px);
+        }
+
+        .symbol-checkbox input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            accent-color: var(--primary);
+        }
+
+        .symbol-label {
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        /* Status Display */
+        .status-grid {
+            display: grid;
+            gap: var(--spacing-md);
+        }
+
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: var(--spacing-md);
+            background: var(--bg-secondary);
+            border-radius: var(--radius-md);
+            border: 1px solid var(--border-primary);
+        }
+
+        .status-label {
+            font-weight: 500;
+            color: var(--text-muted);
+        }
+
+        .status-value {
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .status-value.success {
+            color: var(--success);
+        }
+
+        .status-value.danger {
+            color: var(--danger);
+        }
+
+        /* Results */
+        .results-grid {
+            display: grid;
+            gap: var(--spacing-lg);
+        }
+
+        .result-item {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-primary);
+            border-radius: var(--radius-lg);
+            padding: var(--spacing-lg);
+            transition: all var(--transition-fast);
+        }
+
+        .result-item:hover {
+            border-color: var(--border-focus);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+            transform: translateY(-2px);
+        }
+
+        .result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: var(--spacing-md);
+        }
+
+        .result-symbol h4 {
+            margin: 0 0 var(--spacing-xs) 0;
+            color: var(--text-primary);
+            font-size: 1.25rem;
+        }
+
+        .pattern-badge {
+            display: inline-block;
+            padding: var(--spacing-xs) var(--spacing-sm);
+            border-radius: var(--radius-md);
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .pattern-badge.success {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--success);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+        }
+
+        .pattern-badge.danger {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--danger);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+        }
+
+        .pattern-badge.info {
+            background: rgba(6, 182, 212, 0.1);
+            color: var(--info);
+            border: 1px solid rgba(6, 182, 212, 0.2);
+        }
+
+        .confidence-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            padding: var(--spacing-xs) var(--spacing-sm);
+            border-radius: var(--radius-md);
+            background: var(--bg-primary);
+        }
+
+        .confidence-value.high {
+            color: var(--success);
+        }
+
+        .confidence-value.medium {
+            color: var(--warning);
+        }
+
+        .confidence-value.low {
+            color: var(--danger);
+        }
+
+        .result-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: var(--spacing-md);
+            margin-bottom: var(--spacing-md);
+        }
+
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: var(--spacing-xs) 0;
+        }
+
+        .detail-label {
+            font-weight: 500;
+            color: var(--text-muted);
+            font-size: 0.875rem;
+        }
+
+        .detail-value {
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .result-indicators {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+            gap: var(--spacing-md);
+            padding-top: var(--spacing-md);
+            border-top: 1px solid var(--border-primary);
+        }
+
+        .indicator {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+        }
+
+        .indicator-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-bottom: var(--spacing-xs);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .indicator-value {
+            font-weight: 600;
+            color: var(--text-primary);
+            font-size: 0.875rem;
+        }
+
+        /* Loading States */
+        .loading {
+            text-align: center;
+            padding: var(--spacing-xl);
+            color: var(--text-muted);
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--border-primary);
+            border-radius: 50%;
+            border-top-color: var(--primary);
+            animation: spin 1s ease-in-out infinite;
+            margin-right: var(--spacing-sm);
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Responsive Design */
+        @media (max-width: 1024px) {
+            .sidebar {
+                width: 80px;
+            }
+            
+            .main-content {
+                margin-left: 80px;
+            }
+            
+            .nav-text, .nav-description {
+                display: none;
+            }
+            
+            .brand-name {
+                display: none;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .sidebar {
+                display: none;
+            }
+            
+            .main-content {
+                margin-left: 0;
+                padding: var(--spacing-md);
+            }
+            
+            .page-title {
+                font-size: 2rem;
+            }
+        }
+
+        /* Animations */
+        .fade-in {
+            animation: fadeIn 0.5s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <i class="fas fa-chart-line"></i>
+                </div>
+                <div class="brand-name">TradeClarity</div>
+            </div>
+            
+            <nav class="nav-menu">
+                <div class="nav-item">
+                    <a href="#" class="nav-link">
+                        <i class="fas fa-home nav-icon"></i>
+                        <div>
+                            <div class="nav-text">Dashboard</div>
+                            <div class="nav-description">Overview and metrics</div>
+                        </div>
+                    </a>
+                </div>
+                <div class="nav-item">
+                    <a href="#" class="nav-link active">
+                        <i class="fas fa-search nav-icon"></i>
+                        <div>
+                            <div class="nav-text">Scanner</div>
+                            <div class="nav-description">Market scanner and alerts</div>
+                        </div>
+                    </a>
+                </div>
+                <div class="nav-item">
+                    <a href="#" class="nav-link">
+                        <i class="fas fa-chart-bar nav-icon"></i>
+                        <div>
+                            <div class="nav-text">Analysis</div>
+                            <div class="nav-description">Trading analysis and reports</div>
+                        </div>
+                    </a>
+                </div>
+                <div class="nav-item">
+                    <a href="#" class="nav-link">
+                        <i class="fas fa-shield-alt nav-icon"></i>
+                        <div>
+                            <div class="nav-text">Admin</div>
+                            <div class="nav-description">System configuration</div>
+                        </div>
+                    </a>
+                </div>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <div class="page-header fade-in">
+                <h1 class="page-title">Market Scanner</h1>
+                <p class="page-subtitle">Real-time market scanning and pattern detection</p>
+            </div>
+
+            <!-- Scanner Control Panel -->
+            <div class="card fade-in">
+                <div class="card-header">
+                    <h2 class="card-title">
+                        <i class="fas fa-cogs"></i> Scanner Control
+                    </h2>
+                </div>
+                
+                <div class="grid grid-cols-2">
+                    <div>
+                        <h5 style="margin-bottom: var(--spacing-md); color: var(--text-primary);">
+                            <i class="fas fa-list"></i> Symbol Selection
+                        </h5>
+                        <div class="symbol-grid" id="symbolGrid">
+                            <!-- Symbols will be populated by JavaScript -->
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <h5 style="margin-bottom: var(--spacing-md); color: var(--text-primary);">
+                            <i class="fas fa-info-circle"></i> Scanner Status
+                        </h5>
+                        <div class="status-grid" id="scannerStatus">
+                            <div class="loading">
+                                <span class="loading-spinner"></span>
+                                Loading status...
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div style="margin-top: var(--spacing-lg); padding-top: var(--spacing-lg); border-top: 1px solid var(--border-primary);">
+                    <button class="btn btn-success" id="startBtn" onclick="startScanner()">
+                        <i class="fas fa-play"></i> Start Scanner
+                    </button>
+                    <button class="btn btn-danger" id="stopBtn" onclick="stopScanner()" disabled>
+                        <i class="fas fa-stop"></i> Stop Scanner
+                    </button>
+                </div>
+            </div>
+
+            <!-- Scan Results -->
+            <div class="card fade-in">
+                <div class="card-header">
+                    <h2 class="card-title">
+                        <i class="fas fa-chart-line"></i> Scan Results
+                    </h2>
+                    <div class="card-actions">
+                        <span id="resultsCount" style="color: var(--text-muted); font-size: 0.875rem;">0 results</span>
+                    </div>
+                </div>
+                
+                <div id="scannerResults">
+                    <div class="loading">
+                        <i class="fas fa-search" style="font-size: 2rem; margin-bottom: var(--spacing-md); display: block; color: var(--text-muted);"></i>
+                        No results yet. Start the scanner to see results.
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:3001';
+        let selectedSymbols = ['AAPL', 'MSFT', 'GOOGL', 'TSLA'];
+        let scannerRunning = false;
+
+        // Initialize the page
+        document.addEventListener('DOMContentLoaded', function() {
+            populateSymbols();
+            loadScannerStatus();
+            loadScannerResults();
+            
+            // Auto-refresh every 5 seconds
+            setInterval(loadScannerStatus, 5000);
+            setInterval(loadScannerResults, 10000);
+        });
+
+        function populateSymbols() {
+            const symbols = ['AAPL', 'MSFT', 'GOOGL', 'TSLA', 'NVDA', 'AMD', 'META', 'NFLX'];
+            const grid = document.getElementById('symbolGrid');
+            
+            symbols.forEach(symbol => {
+                const label = document.createElement('label');
+                label.className = 'symbol-checkbox';
+                label.innerHTML = `
+                    <input type="checkbox" ${selectedSymbols.includes(symbol) ? 'checked' : ''} 
+                           onchange="toggleSymbol('${symbol}', this.checked)">
+                    <span class="symbol-label">${symbol}</span>
+                `;
+                grid.appendChild(label);
+            });
+        }
+
+        function toggleSymbol(symbol, checked) {
+            if (checked) {
+                selectedSymbols.push(symbol);
+            } else {
+                selectedSymbols = selectedSymbols.filter(s => s !== symbol);
+            }
+        }
+
+        async function loadScannerStatus() {
+            try {
+                const response = await fetch(`${API_BASE}/api/scanner/status`);
+                const data = await response.json();
+                
+                scannerRunning = data.isRunning;
+                updateStatusUI(data);
+            } catch (error) {
+                console.error('Error loading scanner status:', error);
+                updateStatusUI({ isRunning: false, activeSymbols: [], lastScan: null });
+            }
+        }
+
+        function updateStatusUI(status) {
+            const statusDiv = document.getElementById('scannerStatus');
+            statusDiv.innerHTML = `
+                <div class="status-item">
+                    <span class="status-label">Status:</span>
+                    <span class="status-value ${status.isRunning ? 'success' : 'danger'}">
+                        <i class="fas fa-${status.isRunning ? 'play' : 'stop'}"></i>
+                        ${status.isRunning ? 'Running' : 'Stopped'}
+                    </span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Active Symbols:</span>
+                    <span class="status-value">
+                        <i class="fas fa-list"></i>
+                        ${status.activeSymbols?.length || 0}
+                    </span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Last Scan:</span>
+                    <span class="status-value">
+                        <i class="fas fa-clock"></i>
+                        ${status.lastScan ? new Date(status.lastScan).toLocaleTimeString() : 'Never'}
+                    </span>
+                </div>
+            `;
+
+            // Update button states
+            document.getElementById('startBtn').disabled = status.isRunning;
+            document.getElementById('stopBtn').disabled = !status.isRunning;
+        }
+
+        async function loadScannerResults() {
+            try {
+                const response = await fetch(`${API_BASE}/api/scanner/results`);
+                const data = await response.json();
+                
+                updateResultsUI(data.results || []);
+            } catch (error) {
+                console.error('Error loading scanner results:', error);
+                updateResultsUI([]);
+            }
+        }
+
+        function updateResultsUI(results) {
+            const resultsDiv = document.getElementById('scannerResults');
+            const countSpan = document.getElementById('resultsCount');
+            
+            countSpan.textContent = `${results.length} results`;
+            
+            if (results.length === 0) {
+                resultsDiv.innerHTML = `
+                    <div class="loading">
+                        <i class="fas fa-search" style="font-size: 2rem; margin-bottom: var(--spacing-md); display: block; color: var(--text-muted);"></i>
+                        No scan results found. Start the scanner to see results.
+                    </div>
+                `;
+                return;
+            }
+
+            resultsDiv.innerHTML = `
+                <div class="results-grid">
+                    ${results.map(result => `
+                        <div class="result-item">
+                            <div class="result-header">
+                                <div>
+                                    <h4>${result.symbol}</h4>
+                                    <span class="pattern-badge ${getPatternClass(result.pattern)}">${result.pattern}</span>
+                                </div>
+                                <div class="confidence-value ${getConfidenceClass(result.confidence)}">
+                                    ${Math.round(result.confidence * 100)}%
+                                </div>
+                            </div>
+                            <div class="result-details">
+                                <div class="detail-row">
+                                    <span class="detail-label">Price:</span>
+                                    <span class="detail-value">$${result.price.toFixed(2)}</span>
+                                </div>
+                                <div class="detail-row">
+                                    <span class="detail-label">Volume:</span>
+                                    <span class="detail-value">${result.volume.toLocaleString()}</span>
+                                </div>
+                                <div class="detail-row">
+                                    <span class="detail-label">Time:</span>
+                                    <span class="detail-value">${new Date(result.timestamp).toLocaleTimeString()}</span>
+                                </div>
+                            </div>
+                            <div class="result-indicators">
+                                <div class="indicator">
+                                    <div class="indicator-label">RSI</div>
+                                    <div class="indicator-value">${result.indicators.rsi.toFixed(1)}</div>
+                                </div>
+                                <div class="indicator">
+                                    <div class="indicator-label">MACD</div>
+                                    <div class="indicator-value">${result.indicators.macd.toFixed(2)}</div>
+                                </div>
+                                <div class="indicator">
+                                    <div class="indicator-label">EMA</div>
+                                    <div class="indicator-value">$${result.indicators.ema.toFixed(2)}</div>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        function getPatternClass(pattern) {
+            if (pattern.toLowerCase().includes('bullish')) return 'success';
+            if (pattern.toLowerCase().includes('bearish')) return 'danger';
+            return 'info';
+        }
+
+        function getConfidenceClass(confidence) {
+            if (confidence >= 0.8) return 'high';
+            if (confidence >= 0.6) return 'medium';
+            return 'low';
+        }
+
+        async function startScanner() {
+            try {
+                const response = await fetch(`${API_BASE}/api/scanner/start`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ symbols: selectedSymbols })
+                });
+                
+                if (response.ok) {
+                    showNotification('Scanner started successfully!', 'success');
+                    loadScannerStatus();
+                } else {
+                    showNotification('Failed to start scanner', 'error');
+                }
+            } catch (error) {
+                console.error('Error starting scanner:', error);
+                showNotification('Error starting scanner', 'error');
+            }
+        }
+
+        async function stopScanner() {
+            try {
+                const response = await fetch(`${API_BASE}/api/scanner/stop`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                
+                if (response.ok) {
+                    showNotification('Scanner stopped successfully!', 'success');
+                    loadScannerStatus();
+                } else {
+                    showNotification('Failed to stop scanner', 'error');
+                }
+            } catch (error) {
+                console.error('Error stopping scanner:', error);
+                showNotification('Error stopping scanner', 'error');
+            }
+        }
+
+        function showNotification(message, type) {
+            // Create a simple notification
+            const notification = document.createElement('div');
+            notification.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                padding: 12px 20px;
+                border-radius: 8px;
+                color: white;
+                font-weight: 500;
+                z-index: 1000;
+                animation: slideIn 0.3s ease;
+                background: ${type === 'success' ? 'var(--success)' : 'var(--danger)'};
+            `;
+            notification.textContent = message;
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.remove();
+            }, 3000);
+        }
+
+        // Add slideIn animation
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes slideIn {
+                from { transform: translateX(100%); opacity: 0; }
+                to { transform: translateX(0); opacity: 1; }
+            }
+        `;
+        document.head.appendChild(style);
+    </script>
+</body>
+</html> 

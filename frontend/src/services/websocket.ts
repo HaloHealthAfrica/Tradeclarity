@@ -31,6 +31,11 @@ export interface ScannerUpdate {
   price: number;
   volume: number;
   timestamp: string;
+  indicators: {
+    rsi: number;
+    macd: number;
+    ema: number;
+  };
 }
 
 export interface SystemNotification {
@@ -50,14 +55,14 @@ class WebSocketService {
   private connectionHandlers: ((connected: boolean) => void)[] = [];
 
   constructor() {
-    this.connect();
+    // Don't auto-connect, let components manage connection
   }
 
   private getWebSocketUrl(): string {
-    return process.env.REACT_APP_WS_URL || 'ws://localhost/ws';
+    return process.env.REACT_APP_WS_URL || 'ws://localhost:3001/ws';
   }
 
-  private connect(): void {
+  public connect(): void {
     if (this.isConnecting || this.ws?.readyState === WebSocket.OPEN) {
       return;
     }
@@ -82,7 +87,6 @@ class WebSocketService {
       this.isConnecting = false;
       this.reconnectAttempts = 0;
       this.notifyConnectionChange(true);
-      this.authenticate();
     };
 
     this.ws.onmessage = (event) => {
@@ -122,17 +126,6 @@ class WebSocketService {
       }, delay);
     } else {
       console.error('Max reconnection attempts reached');
-    }
-  }
-
-  private authenticate(): void {
-    const token = localStorage.getItem('auth_token');
-    if (token && this.ws?.readyState === WebSocket.OPEN) {
-      this.send({
-        type: 'auth',
-        data: { token },
-        timestamp: new Date().toISOString()
-      });
     }
   }
 
@@ -197,17 +190,17 @@ class WebSocketService {
     }
   }
 
-  public subscribeToTradingUpdates(symbols: string[]): void {
+  public subscribeToMarketData(symbols: string[]): void {
     this.send({
-      type: 'subscribe_trading',
+      type: 'subscribe_market_data',
       data: { symbols },
       timestamp: new Date().toISOString()
     });
   }
 
-  public unsubscribeFromTradingUpdates(symbols: string[]): void {
+  public unsubscribeFromMarketData(symbols: string[]): void {
     this.send({
-      type: 'unsubscribe_trading',
+      type: 'unsubscribe_market_data',
       data: { symbols },
       timestamp: new Date().toISOString()
     });
@@ -263,20 +256,11 @@ class WebSocketService {
 
   public disconnect(): void {
     if (this.ws) {
-      this.ws.close(1000, 'Client disconnect');
+      this.ws.close();
       this.ws = null;
     }
   }
 }
 
 // Export singleton instance
-export const wsService = new WebSocketService();
-
-// Export types
-export type {
-  WebSocketMessage,
-  TradingUpdate,
-  SignalUpdate,
-  ScannerUpdate,
-  SystemNotification,
-}; 
+export const websocket = new WebSocketService(); 

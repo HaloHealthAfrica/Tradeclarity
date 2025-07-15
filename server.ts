@@ -1,3 +1,4 @@
+import path from 'path';
 import dotenv from 'dotenv';
 import { systemConfig, validateConfig } from './config/systemConfig';
 import { logger } from './utils/logger';
@@ -11,7 +12,7 @@ import { getOpenPositions, getTotalUnrealizedPnL } from './engine/PositionTracke
 import './strategies';
 
 // Load environment variables
-dotenv.config();
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 class TradingSystem {
   private isRunning = false;

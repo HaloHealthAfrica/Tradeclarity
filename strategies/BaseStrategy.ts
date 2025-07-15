@@ -9,10 +9,10 @@ export abstract class BaseStrategy implements Strategy {
   public abstract symbols: string[];
   public abstract intervals: string[];
   public enabled: boolean = true;
+  public parameters: Record<string, any> = {};
   
   protected logger = createModuleLogger('BaseStrategy');
   protected initialized = false;
-  protected parameters: Record<string, any> = {};
 
   constructor(parameters: Record<string, any> = {}) {
     this.parameters = parameters;

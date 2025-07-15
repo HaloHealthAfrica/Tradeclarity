@@ -2,8 +2,8 @@ import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
 
 // API Configuration
 const API_CONFIG = {
-  BASE_URL: process.env.REACT_APP_API_URL || 'http://localhost/api',
-  WS_URL: process.env.REACT_APP_WS_URL || 'ws://localhost/ws',
+  BASE_URL: process.env.REACT_APP_API_URL || 'http://localhost:3001',
+  WS_URL: process.env.REACT_APP_WS_URL || 'ws://localhost:3001/ws',
   TIMEOUT: 10000,
   RETRY_ATTEMPTS: 3,
   RETRY_DELAY: 1000,
@@ -26,40 +26,56 @@ export interface PaginatedResponse<T> extends ApiResponse<T[]> {
   };
 }
 
-// Authentication Types
-export interface LoginRequest {
-  email: string;
-  password: string;
+// Market Data Types
+export interface MarketData {
+  symbol: string;
+  price: number;
+  change: number;
+  changePercent: number;
+  volume: number;
+  timestamp: string;
 }
 
-export interface RegisterRequest {
-  email: string;
-  password: string;
-  firstName: string;
-  lastName: string;
-}
-
-export interface AuthResponse {
-  user: {
-    id: string;
-    email: string;
-    firstName: string;
-    lastName: string;
-    role: string;
-    createdAt: string;
+export interface ScannerResult {
+  symbol: string;
+  pattern: string;
+  confidence: number;
+  price: number;
+  volume: number;
+  timestamp: string;
+  indicators: {
+    rsi: number;
+    macd: number;
+    ema: number;
   };
-  token: string;
-  refreshToken: string;
 }
 
-// Trading Types
-export interface TradingMetrics {
-  totalPnL: number;
-  dailyPnL: number;
-  openPositions: number;
-  activeStrategies: number;
-  winRate: number;
-  maxDrawdown: number;
+export interface DashboardData {
+  metrics: {
+    totalValue: number;
+    dailyPnL: number;
+    totalPnL: number;
+    activePositions: number;
+  };
+  portfolio: Array<{
+    symbol: string;
+    quantity: number;
+    avgPrice: number;
+    currentPrice: number;
+    pnl: number;
+    pnlPercent: number;
+  }>;
+  systemStatus: {
+    scanner: boolean;
+    strategies: boolean;
+    marketData: boolean;
+  };
+}
+
+export interface ScannerStatus {
+  isRunning: boolean;
+  activeSymbols: string[];
+  lastScan: string;
 }
 
 export interface Strategy {
@@ -85,24 +101,9 @@ export interface Signal {
   status: 'pending' | 'executed' | 'cancelled';
 }
 
-export interface ScannerResult {
-  symbol: string;
-  pattern: string;
-  confidence: number;
-  price: number;
-  volume: number;
-  timestamp: string;
-  indicators: {
-    rsi: number;
-    macd: number;
-    ema: number;
-  };
-}
-
 // API Service Class
 class ApiService {
   private api: AxiosInstance;
-  private token: string | null = null;
 
   constructor() {
     this.api = axios.create({
@@ -114,16 +115,12 @@ class ApiService {
     });
 
     this.setupInterceptors();
-    this.loadToken();
   }
 
   private setupInterceptors(): void {
     // Request interceptor
     this.api.interceptors.request.use(
       (config) => {
-        if (this.token) {
-          config.headers.Authorization = `Bearer ${this.token}`;
-        }
         return config;
       },
       (error) => Promise.reject(error)
@@ -133,137 +130,34 @@ class ApiService {
     this.api.interceptors.response.use(
       (response) => response,
       async (error) => {
-        if (error.response?.status === 401) {
-          // Token expired, try to refresh
-          const refreshed = await this.refreshToken();
-          if (refreshed && error.config) {
-            return this.api.request(error.config);
-          }
-        }
+        console.error('API Error:', error);
         return Promise.reject(error);
       }
     );
   }
 
-  private loadToken(): void {
-    this.token = localStorage.getItem('auth_token');
+  // Health Check
+  async getHealth(): Promise<any> {
+    const response = await this.api.get('/api/health');
+    return response.data;
   }
 
-  private saveToken(token: string): void {
-    this.token = token;
-    localStorage.setItem('auth_token', token);
+  // Dashboard Methods
+  async getDashboard(): Promise<DashboardData> {
+    const response = await this.api.get('/api/dashboard');
+    return response.data;
   }
 
-  private clearToken(): void {
-    this.token = null;
-    localStorage.removeItem('auth_token');
+  // Market Data Methods
+  async getMarketQuote(symbol: string): Promise<MarketData> {
+    const response = await this.api.get(`/api/market-data/quote/${symbol}`);
+    return response.data;
   }
 
-  private async refreshToken(): Promise<boolean> {
-    try {
-      const refreshToken = localStorage.getItem('refresh_token');
-      if (!refreshToken) return false;
-
-      const response = await this.api.post<ApiResponse<AuthResponse>>('/auth/refresh', {
-        refreshToken,
-      });
-
-      if (response.data.success && response.data.data) {
-        this.saveToken(response.data.data.token);
-        localStorage.setItem('refresh_token', response.data.data.refreshToken);
-        return true;
-      }
-      return false;
-    } catch (error) {
-      this.clearToken();
-      return false;
-    }
-  }
-
-  // Authentication Methods
-  async login(credentials: LoginRequest): Promise<AuthResponse> {
-    const response = await this.api.post<ApiResponse<AuthResponse>>('/auth/login', credentials);
-    
-    if (response.data.success && response.data.data) {
-      this.saveToken(response.data.data.token);
-      localStorage.setItem('refresh_token', response.data.data.refreshToken);
-      return response.data.data;
-    }
-    
-    throw new Error(response.data.error || 'Login failed');
-  }
-
-  async register(userData: RegisterRequest): Promise<AuthResponse> {
-    const response = await this.api.post<ApiResponse<AuthResponse>>('/auth/register', userData);
-    
-    if (response.data.success && response.data.data) {
-      this.saveToken(response.data.data.token);
-      localStorage.setItem('refresh_token', response.data.data.refreshToken);
-      return response.data.data;
-    }
-    
-    throw new Error(response.data.error || 'Registration failed');
-  }
-
-  async logout(): Promise<void> {
-    try {
-      await this.api.post('/auth/logout');
-    } catch (error) {
-      // Ignore logout errors
-    } finally {
-      this.clearToken();
-    }
-  }
-
-  async getCurrentUser(): Promise<AuthResponse['user']> {
-    const response = await this.api.get<ApiResponse<AuthResponse['user']>>('/auth/me');
-    
-    if (response.data.success && response.data.data) {
-      return response.data.data;
-    }
-    
-    throw new Error(response.data.error || 'Failed to get user info');
-  }
-
-  // Trading Dashboard Methods
-  async getTradingMetrics(): Promise<TradingMetrics> {
-    const response = await this.api.get<ApiResponse<TradingMetrics>>('/trading/metrics');
-    
-    if (response.data.success && response.data.data) {
-      return response.data.data;
-    }
-    
-    throw new Error(response.data.error || 'Failed to get trading metrics');
-  }
-
-  async getStrategies(): Promise<Strategy[]> {
-    const response = await this.api.get<ApiResponse<Strategy[]>>('/trading/strategies');
-    
-    if (response.data.success && response.data.data) {
-      return response.data.data;
-    }
-    
-    throw new Error(response.data.error || 'Failed to get strategies');
-  }
-
-  async getRecentSignals(limit: number = 10): Promise<Signal[]> {
-    const response = await this.api.get<ApiResponse<Signal[]>>(`/trading/signals?limit=${limit}`);
-    
-    if (response.data.success && response.data.data) {
-      return response.data.data;
-    }
-    
-    throw new Error(response.data.error || 'Failed to get recent signals');
-  }
-
-  async getSystemStatus(): Promise<any> {
-    const response = await this.api.get<ApiResponse<any>>('/system/status');
-    
-    if (response.data.success && response.data.data) {
-      return response.data.data;
-    }
-    
-    throw new Error(response.data.error || 'Failed to get system status');
+  async getMarketQuotes(symbols: string[]): Promise<MarketData[]> {
+    const symbolsParam = symbols.join(',');
+    const response = await this.api.get(`/api/market-data/quotes?symbols=${symbolsParam}`);
+    return response.data.quotes;
   }
 
   // Scanner Methods
@@ -277,107 +171,144 @@ class ApiService {
     if (filters?.confidence) params.append('confidence', filters.confidence.toString());
     if (filters?.symbol) params.append('symbol', filters.symbol);
 
-    const response = await this.api.get<ApiResponse<ScannerResult[]>>(`/scanner/results?${params}`);
-    
-    if (response.data.success && response.data.data) {
-      return response.data.data;
-    }
-    
-    throw new Error(response.data.error || 'Failed to get scanner results');
+    const response = await this.api.get(`/api/scanner/results?${params.toString()}`);
+    return response.data.results;
   }
 
   async startScanner(symbols: string[]): Promise<void> {
-    const response = await this.api.post<ApiResponse<void>>('/scanner/start', { symbols });
-    
-    if (!response.data.success) {
-      throw new Error(response.data.error || 'Failed to start scanner');
-    }
+    await this.api.post('/api/scanner/start', { symbols });
   }
 
   async stopScanner(): Promise<void> {
-    const response = await this.api.post<ApiResponse<void>>('/scanner/stop');
-    
-    if (!response.data.success) {
-      throw new Error(response.data.error || 'Failed to stop scanner');
-    }
+    await this.api.post('/api/scanner/stop');
   }
 
-  async getScannerStatus(): Promise<{
-    isRunning: boolean;
-    activeSymbols: string[];
-    lastScan: string;
-  }> {
-    const response = await this.api.get<ApiResponse<any>>('/scanner/status');
-    
-    if (response.data.success && response.data.data) {
-      return response.data.data;
-    }
-    
-    throw new Error(response.data.error || 'Failed to get scanner status');
+  async getScannerStatus(): Promise<ScannerStatus> {
+    const response = await this.api.get('/api/scanner/status');
+    return response.data;
   }
 
-  // Watchlist Methods
-  async getWatchlist(): Promise<string[]> {
-    const response = await this.api.get<ApiResponse<string[]>>('/watchlist');
-    
-    if (response.data.success && response.data.data) {
-      return response.data.data;
-    }
-    
-    throw new Error(response.data.error || 'Failed to get watchlist');
+  // Trading Methods
+  async getStrategies(): Promise<Strategy[]> {
+    const response = await this.api.get('/api/trading/strategies');
+    return response.data.strategies;
   }
 
-  async addToWatchlist(symbol: string): Promise<void> {
-    const response = await this.api.post<ApiResponse<void>>('/watchlist', { symbol });
-    
-    if (!response.data.success) {
-      throw new Error(response.data.error || 'Failed to add to watchlist');
-    }
+  async getSignals(limit: number = 10): Promise<Signal[]> {
+    const response = await this.api.get(`/api/trading/signals?limit=${limit}`);
+    return response.data.signals;
   }
 
-  async removeFromWatchlist(symbol: string): Promise<void> {
-    const response = await this.api.delete<ApiResponse<void>>(`/watchlist/${symbol}`);
-    
-    if (!response.data.success) {
-      throw new Error(response.data.error || 'Failed to remove from watchlist');
-    }
+  async getTradingMetrics(): Promise<any> {
+    const response = await this.api.get('/api/trading/metrics');
+    return response.data;
+  }
+
+  // Analysis Methods
+  async getAnalysisMetrics(): Promise<any> {
+    const response = await this.api.get('/api/analysis/metrics');
+    return response.data;
+  }
+
+  async getRecentTrades(): Promise<any> {
+    const response = await this.api.get('/api/analysis/trades');
+    return response.data;
+  }
+
+  async getAnalysisPerformance(): Promise<any> {
+    const response = await this.api.get('/api/analysis/performance');
+    return response.data;
+  }
+
+  async getStrategyDetails(strategyName: string): Promise<any> {
+    const response = await this.api.get(`/api/analysis/strategy/${encodeURIComponent(strategyName)}`);
+    return response.data;
   }
 
   // Portfolio Methods
   async getPortfolio(): Promise<any> {
-    const response = await this.api.get<ApiResponse<any>>('/portfolio');
-    
-    if (response.data.success && response.data.data) {
-      return response.data.data;
-    }
-    
-    throw new Error(response.data.error || 'Failed to get portfolio');
+    const response = await this.api.get('/api/portfolio');
+    return response.data;
   }
 
-  // Error handling utility
+  // Watchlist Methods
+  async getWatchlist(): Promise<string[]> {
+    const response = await this.api.get('/api/watchlist');
+    return response.data;
+  }
+
+  async addToWatchlist(symbol: string): Promise<void> {
+    await this.api.post('/api/watchlist', { symbol });
+  }
+
+  async removeFromWatchlist(symbol: string): Promise<void> {
+    await this.api.delete(`/api/watchlist/${symbol}`);
+  }
+
+  // System Status
+  async getSystemStatus(): Promise<any> {
+    const response = await this.api.get('/api/status');
+    return response.data;
+  }
+
+  // Backtest Methods
+  async runBacktest(config: any): Promise<any> {
+    const response = await this.api.post('/api/backtest/run', config);
+    return response.data;
+  }
+
+  // Historical Data Methods
+  async downloadHistoricalData(symbol: string, startDate: string, endDate: string, interval: string = '1day'): Promise<any> {
+    const response = await this.api.post('/api/historical/download', {
+      symbol,
+      startDate,
+      endDate,
+      interval,
+    });
+    return response.data;
+  }
+
+  async getHistoricalMetadata(): Promise<any> {
+    const response = await this.api.get('/api/historical/metadata');
+    return response.data;
+  }
+
+  async getHistoricalData(symbol: string, interval: string): Promise<any> {
+    const response = await this.api.get(`/api/historical/data/${symbol}/${interval}`);
+    return response.data;
+  }
+
+  async deleteHistoricalData(symbol: string, interval: string): Promise<void> {
+    await this.api.delete(`/api/historical/data/${symbol}/${interval}`);
+  }
+
+  async getAvailableStrategies(): Promise<string[]> {
+    const response = await this.api.get('/api/trading/strategies');
+    return response.data.strategies.map((s: any) => s.name);
+  }
+
+  // Generic HTTP methods
+  async get<T = any>(url: string, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> {
+    return this.api.get(url, config);
+  }
+
+  async post<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> {
+    return this.api.post(url, data, config);
+  }
+
+  async put<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> {
+    return this.api.put(url, data, config);
+  }
+
+  async delete<T = any>(url: string, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> {
+    return this.api.delete(url, config);
+  }
+
   private handleError(error: any): never {
-    if (error.response?.data?.error) {
-      throw new Error(error.response.data.error);
-    }
-    if (error.message) {
-      throw new Error(error.message);
-    }
-    throw new Error('An unexpected error occurred');
+    console.error('API Error:', error);
+    throw new Error(error.response?.data?.error || error.message || 'Unknown error occurred');
   }
 }
 
 // Export singleton instance
-export const apiService = new ApiService();
-
-// Export types for use in components
-export type {
-  ApiResponse,
-  PaginatedResponse,
-  LoginRequest,
-  RegisterRequest,
-  AuthResponse,
-  TradingMetrics,
-  Strategy,
-  Signal,
-  ScannerResult,
-}; 
+export const api = new ApiService(); 

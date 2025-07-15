@@ -643,4 +643,4 @@ export class ICTStrategy extends BaseStrategy {
 }
 
 // Auto-register the strategy
-registerStrategy('ICTStrategy', ICTStrategy); 
+registerStrategy(new ICTStrategy()); 

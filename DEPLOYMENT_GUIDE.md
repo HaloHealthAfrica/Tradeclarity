@@ -1,195 +1,175 @@
-# 🚀 Deployment Guide
+# Paper Trading System - Deployment Guide
 
-## Quick Fix for System Crashes
+## Overview
+This guide covers deploying the integrated frontend-backend Paper Trading System to Zeabur.
 
-Your system is crashing during deployment due to **TypeScript compilation errors**. Here's how to fix it:
+## System Architecture
+- **Backend**: Node.js/Express server serving API endpoints and React frontend
+- **Frontend**: React application with TypeScript, built and served by the backend
+- **Database**: PostgreSQL (optional, for production data storage)
+- **Deployment**: Zeabur platform
 
-### 1. Environment Setup
+## Pre-Deployment Checklist
 
-```bash
-# Copy environment template
-cp env.example .env
-
-# Edit .env file with your API keys
-# Required variables:
-# - TWELVEDATA_API_KEY
-# - ALPACA_API_KEY  
-# - ALPACA_API_SECRET
-# - JWT_SECRET
-# - DATABASE_URL
-```
-
-### 2. Install Dependencies
+### 1. Environment Variables
+Ensure these environment variables are set in your Zeabur deployment:
 
 ```bash
-npm install
+# API Keys (optional for demo mode)
+TWELVEDATA_API_KEY=your_twelvedata_key
+ALPACA_API_KEY=your_alpaca_key
+ALPACA_API_SECRET=your_alpaca_secret
+
+# Server Configuration
+PORT=8080
+NODE_ENV=production
 ```
 
-### 3. Build the Project
+### 2. Frontend Configuration
+The frontend is configured to use environment variables for API URLs:
 
-```bash
-npm run build
+- **Development**: `http://localhost:8080`
+- **Production**: `https://your-zeabur-domain.zeabur.app`
+
+## Deployment Steps
+
+### 1. Build and Deploy to Zeabur
+
+1. **Push your code to GitHub** (if not already done)
+2. **Connect to Zeabur**:
+   - Go to [Zeabur](https://zeabur.com)
+   - Connect your GitHub repository
+   - Select the repository
+
+3. **Configure deployment**:
+   - Use the custom Dockerfile
+   - Set environment variables in Zeabur dashboard
+   - Deploy
+
+### 2. Verify Deployment
+
+After deployment, verify these endpoints:
+
+- **Frontend**: `https://your-domain.zeabur.app/`
+- **Health Check**: `https://your-domain.zeabur.app/api/health`
+- **Admin Panel**: `https://your-domain.zeabur.app/admin`
+
+## File Structure
+
+```
+PaperTradingSystem/
+├── server-simple.ts          # Main server file
+├── server-simple.js          # Compiled server (production)
+├── Dockerfile                # Docker configuration
+├── frontend/
+│   ├── build/               # Built React app (generated)
+│   ├── src/
+│   │   ├── components/      # React components
+│   │   ├── pages/          # Page components
+│   │   ├── services/       # API services
+│   │   └── styles/         # CSS styles
+│   └── package.json        # Frontend dependencies
+└── package.json            # Backend dependencies
 ```
 
-### 4. Start the System
+## API Endpoints
 
-```bash
-# Development mode
-npm run dev
+### Health & Status
+- `GET /api/health` - System health check
+- `GET /api/status` - System status
+- `GET /api/trading/status` - Trading system status
+- `GET /api/market/status` - Market data status
 
-# Production mode  
-npm start
+### Admin Panel
+- `GET /api/admin/keys` - Get API key status
+- `POST /api/admin/keys` - Update API keys
+- `GET /api/admin/system` - System information
 
-# All services
-npm run start:all
-```
-
-## Common Issues & Solutions
-
-### ❌ Build Errors
-
-**Problem**: TypeScript compilation fails
-**Solution**: 
-1. Check that all required environment variables are set
-2. Ensure all dependencies are installed
-3. Run `npm run build` to see specific errors
-
-### ❌ Missing API Keys
-
-**Problem**: System crashes on startup
-**Solution**:
-1. Get API keys from:
-   - TwelveData: https://twelvedata.com/
-   - Alpaca: https://alpaca.markets/
-2. Add them to your `.env` file
-
-### ❌ Database Connection Issues
-
-**Problem**: Can't connect to database
-**Solution**:
-1. Start PostgreSQL: `npm run start:database`
-2. Or use Docker: `docker-compose up postgres`
-
-### ❌ WebSocket Connection Issues
-
-**Problem**: Real-time data not working
-**Solution**:
-1. Verify TwelveData API key is valid
-2. Check network connectivity
-3. Review WebSocket URL in config
-
-## Deployment Options
-
-### Option 1: Local Development
-```bash
-npm run dev
-```
-
-### Option 2: Production Mode
-```bash
-npm start
-```
-
-### Option 3: Docker Deployment
-```bash
-# Build and start all services
-docker-compose up -d
-
-# View logs
-docker-compose logs -f
-```
-
-### Option 4: Microservices
-```bash
-# Start individual services
-npm run start:gateway
-npm run start:scanner
-npm run start:database
-npm run start:notification
-npm run start:marketdata
-npm run start:auth
-```
-
-## Health Checks
-
-### Check System Status
-```bash
-# View logs
-tail -f logs/system.log
-
-# Check running processes
-ps aux | grep node
-```
-
-### Monitor Performance
-- Check CPU usage
-- Monitor memory consumption
-- Review error logs
+### Frontend Routes
+- `/` - Dashboard (redirects to `/dashboard`)
+- `/dashboard` - Main trading dashboard
+- `/admin` - Admin panel
+- `/scanner` - Market scanner
+- `/analysis` - Trading analysis
+- `/settings` - System settings
 
 ## Troubleshooting
 
-### If System Still Crashes:
+### Common Issues
 
-1. **Check Logs**:
-   ```bash
-   tail -f logs/system.log
-   ```
+1. **Frontend not loading**:
+   - Check if `frontend/build` directory exists
+   - Verify static file serving in server configuration
+   - Check browser console for errors
 
-2. **Verify Environment**:
-   ```bash
-   node deploy-check.js
-   ```
+2. **API calls failing**:
+   - Verify environment variables are set
+   - Check API URL configuration in frontend
+   - Ensure CORS is properly configured
 
-3. **Test Individual Components**:
-   ```bash
-   npm test
-   ```
+3. **Build failures**:
+   - Check TypeScript compilation errors
+   - Verify all dependencies are installed
+   - Check for missing environment variables
 
-4. **Reset and Rebuild**:
-   ```bash
-   rm -rf dist node_modules
-   npm install
-   npm run build
-   ```
+### Debug Commands
 
-### Emergency Recovery
+```bash
+# Check if frontend build exists
+ls -la frontend/build/
 
-If the system is completely down:
+# Test server locally
+npm run start:prod
 
-1. **Stop all processes**:
-   ```bash
-   pkill -f node
-   ```
+# Check environment variables
+echo $TWELVEDATA_API_KEY
+echo $ALPACA_API_KEY
+echo $ALPACA_API_SECRET
+```
 
-2. **Clear cache**:
-   ```bash
-   rm -rf cache/*
-   ```
+## Development vs Production
 
-3. **Restart fresh**:
-   ```bash
-   npm run start:all
-   ```
+### Development
+- Frontend runs on `http://localhost:3000`
+- Backend runs on `http://localhost:8080`
+- Uses proxy configuration for API calls
 
-## Production Checklist
+### Production
+- Frontend and backend served from same domain
+- Static files served by Express
+- Environment variables control API URLs
 
-- [ ] Environment variables configured
-- [ ] API keys valid and working
-- [ ] Database running and accessible
-- [ ] All services building successfully
-- [ ] Tests passing
-- [ ] Logs being written
-- [ ] Health checks responding
+## Security Considerations
+
+1. **API Keys**: Store securely in environment variables
+2. **CORS**: Configured for production domains
+3. **HTTPS**: Zeabur provides SSL certificates
+4. **Authentication**: Implement proper auth for production use
+
+## Performance Optimization
+
+1. **Frontend**: Built with production optimizations
+2. **Static Files**: Served efficiently by Express
+3. **Caching**: Implement appropriate caching headers
+4. **Compression**: Enable gzip compression
+
+## Monitoring
+
+Monitor these metrics:
+- Server response times
+- API endpoint availability
+- Frontend load times
+- Error rates
 
 ## Support
 
-If you're still experiencing issues:
-
-1. Check the logs in `logs/` directory
-2. Run `npm test` to verify functionality
-3. Review the error messages from `npm run build`
-4. Ensure all required services are running
+For issues:
+1. Check Zeabur deployment logs
+2. Verify environment variables
+3. Test endpoints individually
+4. Check browser console for frontend errors
 
 ---
 
-**⚠️ Important**: This is a paper trading system for educational purposes. Never use real money without proper testing and risk management. 
+**Last Updated**: July 2024
+**Version**: 1.0.0 

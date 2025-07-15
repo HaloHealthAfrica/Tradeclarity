@@ -1,4 +1,8 @@
+import dotenv from 'dotenv';
 import { SystemConfig, TwelveDataConfig, AlpacaConfig, StrategyConfig } from '../types';
+
+// Load environment variables immediately
+dotenv.config();
 
 // Environment variable validation
 const getRequiredEnv = (key: string): string => {

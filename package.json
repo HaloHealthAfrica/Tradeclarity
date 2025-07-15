@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node dist/server.js",
     "start:simple": "ts-node server-simple.ts",
-    "start:prod": "ts-node server-simple.ts",
+    "start:prod": "node server-simple.js",
+    "start:production": "node server-simple.js",
     "dev": "ts-node server.ts",
     "build": "tsc",
     "test": "jest",

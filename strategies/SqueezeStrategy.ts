@@ -236,4 +236,4 @@ export class SqueezeStrategy extends BaseStrategy {
 }
 
 // Auto-register the strategy
-registerStrategy('SqueezeStrategy', SqueezeStrategy);
+registerStrategy(new SqueezeStrategy());
