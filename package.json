@@ -5,6 +5,8 @@
   "main": "server.ts",
   "scripts": {
     "start": "node dist/server.js",
+    "start:simple": "ts-node server-simple.ts",
+    "start:prod": "ts-node server-simple.ts",
     "dev": "ts-node server.ts",
     "build": "tsc",
     "test": "jest",
@@ -43,6 +45,7 @@
     "http-proxy-middleware": "^2.0.6",
     "jsonwebtoken": "^9.0.2",
     "nodemailer": "^6.9.0",
+    "openai": "^5.9.0",
     "pg": "^8.11.0",
     "redis": "^4.6.0",
     "winston": "^3.11.0",

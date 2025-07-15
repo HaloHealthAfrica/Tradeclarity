@@ -5,7 +5,7 @@ const API_SECRET = process.env.ALPACA_API_SECRET;
 const BASE_URL = 'https://paper-api.alpaca.markets';
 
 export const placeOrder = async (symbol: string, qty: number, side: 'buy' | 'sell') => {
-    const response = await axios.post(\`\${BASE_URL}/v2/orders\`, {
+    const response = await axios.post(`${BASE_URL}/v2/orders`, {
         symbol,
         qty,
         side,

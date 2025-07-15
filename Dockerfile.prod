@@ -1,0 +1,47 @@
+FROM node:18-alpine AS builder
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install all dependencies (including dev dependencies for build)
+RUN npm ci
+
+# Copy source code
+COPY . .
+
+# Create logs directory
+RUN mkdir -p logs
+
+# Build the project
+RUN npm run build
+
+# Production stage
+FROM node:18-alpine AS production
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install only production dependencies
+RUN npm ci --only=production
+
+# Copy built files from builder stage
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/types ./types
+COPY --from=builder /app/utils ./utils
+COPY --from=builder /app/config ./config
+COPY --from=builder /app/server-simple.ts ./
+
+# Create logs directory
+RUN mkdir -p logs
+
+# Expose port
+EXPOSE 3000
+
+# Start the simple server
+CMD ["npm", "run", "start:simple"] 

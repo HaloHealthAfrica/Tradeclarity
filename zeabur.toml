@@ -1,0 +1,13 @@
+[build]
+builder = "docker"
+dockerfile = "Dockerfile.zeabur"
+
+[deploy]
+healthCheckPath = "/health"
+healthCheckInterval = 30
+healthCheckTimeout = 10
+healthCheckRetries = 3
+
+[env]
+NODE_ENV = "production"
+PORT = "8080" 

@@ -56,8 +56,8 @@ class Logger extends EventEmitter {
       timestamp: Date.now(),
       level,
       message,
-      context,
-      error,
+      context: context || undefined,
+      error: error || undefined,
       module
     };
 
